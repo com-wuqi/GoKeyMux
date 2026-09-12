@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"time"
+
+	"github.com/aiwaki/makc"
+	"github.com/rpdg/winput"
 )
 
 func main() {
@@ -12,7 +16,7 @@ func main() {
 	if err != nil {
 		log.Printf("MakcInputInit() failed: %v", err)
 	}
-	MakcInputClose(makcInputClient)
+	defer MakcInputClose(makcInputClient)
 
 	_, err = WinInputInitWithWindow(false, -1)
 	if err != nil {
@@ -22,6 +26,20 @@ func main() {
 	err = WinInputWithInterceptionInit()
 	if err != nil {
 		log.Printf("WinInputWithInterceptionInit() failed: %v", err)
+	} // win input
+
+	ctx := context.Background()
+	for {
+		time.Sleep(300 * time.Millisecond)
+		err := makcInputClient.Keyboard.Tap(ctx, makc.KeyZ)
+		if err != nil {
+			log.Printf("MakcInputClient.Keyboard.Tap() failed: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+		err = winput.Press(winput.KeyX)
+		if err != nil {
+			log.Printf("winput.Press() failed: %v", err)
+		}
 	}
 
 }
