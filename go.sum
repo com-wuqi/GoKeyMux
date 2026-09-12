@@ -1,0 +1,10 @@
+github.com/aiwaki/makc v0.2.0 h1:Ml7LPFJOekSnrd7AgvJdg/6rThSdwsIguSHZFxzhBxU=
+github.com/aiwaki/makc v0.2.0/go.mod h1:8XXFLWdE4Nhzhi7ZocbjN3hzjl5Je8XPnEKrrLWOeRg=
+github.com/ebitengine/purego v0.10.0 h1:QIw4xfpWT6GWTzaW5XEKy3HXoqrJGx1ijYHzTF0/ISU=
+github.com/ebitengine/purego v0.10.0/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
+github.com/godbus/dbus/v5 v5.2.2 h1:TUR3TgtSVDmjiXOgAAyaZbYmIeP3DPkld3jgKGV8mXQ=
+github.com/godbus/dbus/v5 v5.2.2/go.mod h1:3AAv2+hPq5rdnr5txxxRwiGjPXamgoIHgz9FPBfOp3c=
+github.com/rpdg/winput v1.2.6 h1:y1w1T31h98og9aPZ2HQZDcFgi/byEb2/511PJ0m9vfo=
+github.com/rpdg/winput v1.2.6/go.mod h1:W4SyApVaO2M4ahnTI0b7Esn/oozICH0MJ32S1Cx1lzs=
+golang.org/x/sys v0.35.0 h1:vz1N37gP5bs89s7He8XuIYXpyY0+QlsKmzipCbUtyxI=
+golang.org/x/sys v0.35.0/go.mod h1:BJP2sWEmIv4KK5OTEluFJCKSidICx8ciO85XgH3Ak8k=
