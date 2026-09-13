@@ -16,6 +16,14 @@ func TestPutUint32LE(t *testing.T) {
 	}
 }
 
+func TestBuildKeyboardReport(t *testing.T) {
+	got := buildKeyboardReport(ModLCtrl|ModLShift, [fakerInputKeyCodeCount]byte{fakerInputKeyA, fakerInputKeyB, 0, 0, 0, 0})
+	want := []byte{0x01, ModLCtrl | ModLShift, 0x00, fakerInputKeyA, fakerInputKeyB, 0, 0, 0, 0}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("buildKeyboardReport = %v, want %v", got, want)
+	}
+}
+
 func TestWriteControlReportLayout(t *testing.T) {
 	inner := []byte{0x01, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00}
 	report := buildControlReport(inner)

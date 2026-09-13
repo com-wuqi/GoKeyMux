@@ -7,8 +7,8 @@ import (
 	"github.com/rpdg/winput"
 )
 
-func WinInputInitWithWindow(useStaticIndex bool, index int) (*winput.Window, error) {
-	log.Println("WinInputInitWithWindow")
+func WinputInitWithWindow(useStaticIndex bool, index int) (*winput.Window, error) {
+	log.Println("WinputInitWithWindow")
 	windows, err := winput.FindByProcessName("notepad.exe")
 	if err != nil {
 		log.Println("Find By Process Name Error")
@@ -31,13 +31,8 @@ func WinInputInitWithWindow(useStaticIndex bool, index int) (*winput.Window, err
 		}
 	}
 	if target == nil {
-		log.Println("WinInputInitWithWindow: window not found")
-		return nil, errors.New("WinInputInitWithWindow: window not found")
-	}
-	err = target.Press(winput.KeyB)
-	if err != nil {
-		log.Println("WinInputInitWithWindow Press Error")
-		return nil, err
+		log.Println("WinputInitWithWindow: window not found")
+		return nil, errors.New("WinputInitWithWindow: window not found")
 	}
 	return target, err
 }

@@ -197,6 +197,15 @@ func (d *FakerInputDevice) KeyUp() error {
 	return d.keyUpLocked()
 }
 
+// SetKeys holds the given keys (up to 6) and modifiers simultaneously. Codes
+// beyond the first 6 are ignored; an empty slice releases all keys. This is the
+// primitive for multi-key combos and for releasing keys one at a time.
+func (d *FakerInputDevice) SetKeys(codes []byte, modifiers byte) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.setKeysLocked(codes, modifiers)
+}
+
 // Tap presses and releases a single key.
 func (d *FakerInputDevice) Tap(code byte, modifiers byte) error {
 	d.mu.Lock()
@@ -222,12 +231,18 @@ func (d *FakerInputDevice) TypeText(s string) error {
 }
 
 func (d *FakerInputDevice) keyDownLocked(code byte, modifiers byte) error {
-	keys := [fakerInputKeyCodeCount]byte{code}
-	return d.sendKeyboardReport(modifiers, keys)
+	return d.setKeysLocked([]byte{code}, modifiers)
 }
 
 func (d *FakerInputDevice) keyUpLocked() error {
-	return d.sendKeyboardReport(0, [fakerInputKeyCodeCount]byte{})
+	return d.setKeysLocked(nil, 0)
+}
+
+func (d *FakerInputDevice) setKeysLocked(codes []byte, modifiers byte) error {
+	var keys [fakerInputKeyCodeCount]byte
+	n := min(len(codes), fakerInputKeyCodeCount)
+	copy(keys[:], codes[:n])
+	return d.sendKeyboardReport(modifiers, keys)
 }
 
 func (d *FakerInputDevice) tapLocked(code byte, modifiers byte) error {
@@ -237,14 +252,20 @@ func (d *FakerInputDevice) tapLocked(code byte, modifiers byte) error {
 	return d.keyUpLocked()
 }
 
-// sendKeyboardReport injects a 9-byte keyboard input report via the control report.
-func (d *FakerInputDevice) sendKeyboardReport(modifiers byte, keys [fakerInputKeyCodeCount]byte) error {
+// buildKeyboardReport assembles the 9-byte keyboard input report:
+// report ID (0x01), shift-key flags, reserved byte, then up to 6 key codes.
+func buildKeyboardReport(modifiers byte, keys [fakerInputKeyCodeCount]byte) []byte {
 	inner := make([]byte, fakerInputKeyboardReportSize)
 	inner[0] = fakerInputReportIDKeyboard
 	inner[1] = modifiers
 	inner[2] = 0
 	copy(inner[3:], keys[:])
-	return d.writeControlReport(inner)
+	return inner
+}
+
+// sendKeyboardReport injects a 9-byte keyboard input report via the control report.
+func (d *FakerInputDevice) sendKeyboardReport(modifiers byte, keys [fakerInputKeyCodeCount]byte) error {
+	return d.writeControlReport(buildKeyboardReport(modifiers, keys))
 }
 
 // buildControlReport wraps inner in a full 65-byte control output report

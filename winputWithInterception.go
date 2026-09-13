@@ -38,7 +38,7 @@ const (
 	PROCESSOR_ARCHITECTURE_ARM64 = 12 // ARM64
 )
 
-func WinInputWithInterceptionInit() error {
+func WinputWithInterceptionInit() error {
 	arch := GetNativeSystemInfo()
 	switch arch {
 	case PROCESSOR_ARCHITECTURE_INTEL:
@@ -66,11 +66,6 @@ func WinInputWithInterceptionInit() error {
 	}
 	if err := winput.SetBackend(winput.BackendHID); err != nil {
 		log.Printf("switch to hid failed: %v", err)
-		return err
-	}
-
-	err := winput.Press(winput.KeyB)
-	if err != nil {
 		return err
 	}
 	return nil
