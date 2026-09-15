@@ -1,0 +1,47 @@
+# Third-Party Notices
+
+This project (GoKeyMux) depends on the following third-party components, which
+are NOT covered by the project's MIT License. Each component is governed by its
+own license terms as listed below.
+
+## Go module dependencies
+
+### github.com/aiwaki/makc v0.2.0
+License: MIT
+Copyright (c) 2023 NeuralTeam
+Copyright (c) 2026 aiwaki
+
+### github.com/rpdg/winput v1.2.6
+License: MIT
+Copyright (c) 2026 Lyu PF
+
+### github.com/ebitengine/purego v0.10.0
+License: Apache License 2.0
+
+### github.com/godbus/dbus/v5 v5.2.2
+License: BSD-2-Clause
+Copyright (c) 2013, Georg Reinke, Google
+
+### golang.org/x/sys v0.35.0
+License: BSD-3-Clause
+Copyright 2009 The Go Authors.
+
+### google.golang.org/protobuf v1.36.12
+License: BSD-3-Clause
+Copyright (c) 2018 The Go Authors.
+
+## Bundled third-party binaries
+
+### Interception (keyboard driver)
+Located under `Interception/`.
+
+- Non-commercial use: GNU Lesser General Public License v3 (LGPL 3.0)
+  See `Interception/licenses/non-commercial-usage/LGPL 3.0.txt`.
+- Commercial use: requires a separate commercial license
+  See `Interception/licenses/commercial-usage/`.
+
+### FakerInput
+`FakerInput_Setup_0.1.1_x64.msi`
+
+License terms are provided by the vendor. Review its terms before
+redistribution.
