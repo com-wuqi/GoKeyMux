@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -68,6 +69,7 @@ type FakerInputDevice struct {
 // FakerInputInit finds and opens the FakerInput control collection, the handle
 // used to inject keyboard reports.
 func FakerInputInit() (*FakerInputDevice, error) {
+	log.Println("FakerInputInit")
 	handle, err := openFakerInputCollection(fakerInputUsageControl)
 	if err != nil {
 		return nil, err

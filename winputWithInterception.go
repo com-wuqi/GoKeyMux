@@ -39,6 +39,7 @@ const (
 )
 
 func WinputWithInterceptionInit() error {
+	log.Println("WinputWithInterceptionInit")
 	arch := GetNativeSystemInfo()
 	switch arch {
 	case PROCESSOR_ARCHITECTURE_INTEL:

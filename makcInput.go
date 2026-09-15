@@ -16,7 +16,6 @@ func MakcInputInit() (*makc.Client, error) {
 }
 
 func MakcInputClose(client *makc.Client) {
-	log.Println("MakcInputClose")
 	if client == nil {
 		return
 	}
