@@ -4,6 +4,8 @@
       <w>Makc</w>
       <w>Winput</w>
       <w>makc</w>
+      <w>winputWithInterception</w>
+      <w>winputWithWindow</w>
     </words>
   </dictionary>
 </component>

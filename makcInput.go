@@ -1,13 +1,13 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/aiwaki/makc"
 )
 
 func MakcInputInit() (*makc.Client, error) {
-	log.Println("MakcInputInit")
+	slog.Debug("FakerInputInit")
 	client, err := makc.Open()
 	if err != nil {
 		return nil, err
@@ -21,6 +21,6 @@ func MakcInputClose(client *makc.Client) {
 	}
 	err := client.Close()
 	if err != nil {
-		log.Printf("MakcInputClose failed: %v", err)
+		slog.Warn("FakerInputClose failed")
 	}
 }

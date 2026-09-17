@@ -2,19 +2,19 @@ package main
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 
 	"github.com/rpdg/winput"
 )
 
 func WinputInitWithWindow(useStaticIndex bool, index int) (*winput.Window, error) {
-	log.Println("WinputInitWithWindow")
+	slog.Debug("WinputInitWithWindow")
 	windows, err := winput.FindByProcessName("notepad.exe")
 	if err != nil {
-		log.Println("Find By Process Name Error")
+		slog.Debug("Find By Process Name Error")
 		return nil, err
 	}
-	log.Println("debug: length of window:", len(windows))
+	slog.Debug("debug: length of window:", len(windows))
 	var target *winput.Window
 	target = nil
 	if useStaticIndex {
@@ -31,7 +31,7 @@ func WinputInitWithWindow(useStaticIndex bool, index int) (*winput.Window, error
 		}
 	}
 	if target == nil {
-		log.Println("WinputInitWithWindow: window not found")
+		slog.Debug("WinputInitWithWindow: window not found")
 		return nil, errors.New("WinputInitWithWindow: window not found")
 	}
 	return target, err

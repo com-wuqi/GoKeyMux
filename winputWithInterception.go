@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -39,15 +40,15 @@ const (
 )
 
 func WinputWithInterceptionInit() error {
-	log.Println("WinputWithInterceptionInit")
+	slog.Debug("WinputWithInterceptionInit")
 	arch := GetNativeSystemInfo()
 	switch arch {
 	case PROCESSOR_ARCHITECTURE_INTEL:
-		log.Println("is x86")
+		slog.Debug("is x86")
 	case PROCESSOR_ARCHITECTURE_AMD64:
-		log.Println("is x64")
+		slog.Debug("is x64")
 	case PROCESSOR_ARCHITECTURE_ARM64:
-		log.Println("is arm64, unsupported")
+		slog.Debug("is arm64, unsupported")
 		return errors.New("not supported")
 	default:
 		return errors.New("not supported")
