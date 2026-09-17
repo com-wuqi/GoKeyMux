@@ -10,6 +10,7 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
+	sync "sync"
 	unsafe "unsafe"
 )
 
@@ -20,16 +21,290 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type KeyInput struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	IsRune        bool                   `protobuf:"varint,2,opt,name=isRune,proto3" json:"isRune,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeyInput) Reset() {
+	*x = KeyInput{}
+	mi := &file_proto_gokeymux_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyInput) ProtoMessage() {}
+
+func (x *KeyInput) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_gokeymux_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyInput.ProtoReflect.Descriptor instead.
+func (*KeyInput) Descriptor() ([]byte, []int) {
+	return file_proto_gokeymux_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *KeyInput) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *KeyInput) GetIsRune() bool {
+	if x != nil {
+		return x.IsRune
+	}
+	return false
+}
+
+type KeyReturn struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	IsAllDone     bool                   `protobuf:"varint,1,opt,name=isAllDone,proto3" json:"isAllDone,omitempty"`
+	MetaData      string                 `protobuf:"bytes,2,opt,name=metaData,proto3" json:"metaData,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeyReturn) Reset() {
+	*x = KeyReturn{}
+	mi := &file_proto_gokeymux_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyReturn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyReturn) ProtoMessage() {}
+
+func (x *KeyReturn) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_gokeymux_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyReturn.ProtoReflect.Descriptor instead.
+func (*KeyReturn) Descriptor() ([]byte, []int) {
+	return file_proto_gokeymux_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *KeyReturn) GetIsAllDone() bool {
+	if x != nil {
+		return x.IsAllDone
+	}
+	return false
+}
+
+func (x *KeyReturn) GetMetaData() string {
+	if x != nil {
+		return x.MetaData
+	}
+	return ""
+}
+
+type KeyInputDebug struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	IsRune        bool                   `protobuf:"varint,2,opt,name=isRune,proto3" json:"isRune,omitempty"`
+	TimeStamp     string                 `protobuf:"bytes,3,opt,name=timeStamp,proto3" json:"timeStamp,omitempty"`
+	MetaData      string                 `protobuf:"bytes,4,opt,name=metaData,proto3" json:"metaData,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeyInputDebug) Reset() {
+	*x = KeyInputDebug{}
+	mi := &file_proto_gokeymux_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyInputDebug) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyInputDebug) ProtoMessage() {}
+
+func (x *KeyInputDebug) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_gokeymux_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyInputDebug.ProtoReflect.Descriptor instead.
+func (*KeyInputDebug) Descriptor() ([]byte, []int) {
+	return file_proto_gokeymux_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *KeyInputDebug) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *KeyInputDebug) GetIsRune() bool {
+	if x != nil {
+		return x.IsRune
+	}
+	return false
+}
+
+func (x *KeyInputDebug) GetTimeStamp() string {
+	if x != nil {
+		return x.TimeStamp
+	}
+	return ""
+}
+
+func (x *KeyInputDebug) GetMetaData() string {
+	if x != nil {
+		return x.MetaData
+	}
+	return ""
+}
+
+type KeyReturnDebug struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	IsFinished    bool                   `protobuf:"varint,1,opt,name=is_finished,json=isFinished,proto3" json:"is_finished,omitempty"`
+	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	TimeStamp     string                 `protobuf:"bytes,3,opt,name=timeStamp,proto3" json:"timeStamp,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeyReturnDebug) Reset() {
+	*x = KeyReturnDebug{}
+	mi := &file_proto_gokeymux_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyReturnDebug) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyReturnDebug) ProtoMessage() {}
+
+func (x *KeyReturnDebug) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_gokeymux_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyReturnDebug.ProtoReflect.Descriptor instead.
+func (*KeyReturnDebug) Descriptor() ([]byte, []int) {
+	return file_proto_gokeymux_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *KeyReturnDebug) GetIsFinished() bool {
+	if x != nil {
+		return x.IsFinished
+	}
+	return false
+}
+
+func (x *KeyReturnDebug) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *KeyReturnDebug) GetTimeStamp() string {
+	if x != nil {
+		return x.TimeStamp
+	}
+	return ""
+}
+
 var File_proto_gokeymux_proto protoreflect.FileDescriptor
 
 const file_proto_gokeymux_proto_rawDesc = "" +
 	"\n" +
-	"\x14proto/gokeymux.proto\x12\bGoKeyMuxB\x13Z\x11GoKeyMux/proto/pbb\x06proto3"
+	"\x14proto/gokeymux.proto\x12\bGoKeyMux\"4\n" +
+	"\bkeyInput\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x16\n" +
+	"\x06isRune\x18\x02 \x01(\bR\x06isRune\"E\n" +
+	"\tkeyReturn\x12\x1c\n" +
+	"\tisAllDone\x18\x01 \x01(\bR\tisAllDone\x12\x1a\n" +
+	"\bmetaData\x18\x02 \x01(\tR\bmetaData\"s\n" +
+	"\rkeyInputDebug\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x16\n" +
+	"\x06isRune\x18\x02 \x01(\bR\x06isRune\x12\x1c\n" +
+	"\ttimeStamp\x18\x03 \x01(\tR\ttimeStamp\x12\x1a\n" +
+	"\bmetaData\x18\x04 \x01(\tR\bmetaData\"a\n" +
+	"\x0ekeyReturnDebug\x12\x1f\n" +
+	"\vis_finished\x18\x01 \x01(\bR\n" +
+	"isFinished\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\tR\x03key\x12\x1c\n" +
+	"\ttimeStamp\x18\x03 \x01(\tR\ttimeStamp2\x8e\x01\n" +
+	"\rrpcKeyService\x127\n" +
+	"\n" +
+	"keyService\x12\x12.GoKeyMux.keyInput\x1a\x13.GoKeyMux.keyReturn(\x01\x12D\n" +
+	"\x0fkeyServiceDebug\x12\x17.GoKeyMux.keyInputDebug\x1a\x18.GoKeyMux.keyReturnDebugB\x13Z\x11GoKeyMux/proto/pbb\x06proto3"
 
-var file_proto_gokeymux_proto_goTypes = []any{}
+var (
+	file_proto_gokeymux_proto_rawDescOnce sync.Once
+	file_proto_gokeymux_proto_rawDescData []byte
+)
+
+func file_proto_gokeymux_proto_rawDescGZIP() []byte {
+	file_proto_gokeymux_proto_rawDescOnce.Do(func() {
+		file_proto_gokeymux_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_gokeymux_proto_rawDesc), len(file_proto_gokeymux_proto_rawDesc)))
+	})
+	return file_proto_gokeymux_proto_rawDescData
+}
+
+var file_proto_gokeymux_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_proto_gokeymux_proto_goTypes = []any{
+	(*KeyInput)(nil),       // 0: GoKeyMux.keyInput
+	(*KeyReturn)(nil),      // 1: GoKeyMux.keyReturn
+	(*KeyInputDebug)(nil),  // 2: GoKeyMux.keyInputDebug
+	(*KeyReturnDebug)(nil), // 3: GoKeyMux.keyReturnDebug
+}
 var file_proto_gokeymux_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
+	0, // 0: GoKeyMux.rpcKeyService.keyService:input_type -> GoKeyMux.keyInput
+	2, // 1: GoKeyMux.rpcKeyService.keyServiceDebug:input_type -> GoKeyMux.keyInputDebug
+	1, // 2: GoKeyMux.rpcKeyService.keyService:output_type -> GoKeyMux.keyReturn
+	3, // 3: GoKeyMux.rpcKeyService.keyServiceDebug:output_type -> GoKeyMux.keyReturnDebug
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -46,12 +321,13 @@ func file_proto_gokeymux_proto_init() {
 			GoPackagePath: reflect.TypeFor[x]().PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_gokeymux_proto_rawDesc), len(file_proto_gokeymux_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   0,
+			NumMessages:   4,
 			NumExtensions: 0,
-			NumServices:   0,
+			NumServices:   1,
 		},
 		GoTypes:           file_proto_gokeymux_proto_goTypes,
 		DependencyIndexes: file_proto_gokeymux_proto_depIdxs,
+		MessageInfos:      file_proto_gokeymux_proto_msgTypes,
 	}.Build()
 	File_proto_gokeymux_proto = out.File
 	file_proto_gokeymux_proto_goTypes = nil

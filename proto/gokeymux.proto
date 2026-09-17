@@ -3,3 +3,31 @@ syntax = "proto3";
 option go_package = "GoKeyMux/proto/pb";
 
 package GoKeyMux;
+
+message keyInput {
+  string key = 1;
+  bool isRune = 2;
+}
+
+message keyReturn {
+  bool isAllDone = 1;
+  string metaData = 2;
+}
+
+message keyInputDebug {
+  string key = 1;
+  bool isRune = 2;
+  string timeStamp = 3;
+  string metaData = 4;
+}
+
+message keyReturnDebug {
+  bool is_finished = 1;
+  string key = 2;
+  string timeStamp = 3;
+}
+
+service rpcKeyService {
+  rpc keyService (stream keyInput) returns (keyReturn);
+  rpc keyServiceDebug (keyInputDebug) returns (keyReturnDebug);
+}
