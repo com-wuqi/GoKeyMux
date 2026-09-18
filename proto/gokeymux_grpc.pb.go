@@ -105,14 +105,14 @@ func RegisterRpcKeyServiceServer(s grpc.ServiceRegistrar, srv RpcKeyServiceServe
 	s.RegisterService(&RpcKeyService_ServiceDesc, srv)
 }
 
-func _RpcKeyService_KeyService_Handler(srv any, stream grpc.ServerStream) error {
+func _RpcKeyService_KeyService_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(RpcKeyServiceServer).KeyService(&grpc.GenericServerStream[KeyInput, KeyReturn]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type RpcKeyService_KeyServiceServer = grpc.ClientStreamingServer[KeyInput, KeyReturn]
 
-func _RpcKeyService_KeyServiceDebug_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func _RpcKeyService_KeyServiceDebug_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(KeyInputDebug)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -124,7 +124,7 @@ func _RpcKeyService_KeyServiceDebug_Handler(srv any, ctx context.Context, dec fu
 		Server:     srv,
 		FullMethod: RpcKeyService_KeyServiceDebug_FullMethodName,
 	}
-	handler := func(ctx context.Context, req any) (any, error) {
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RpcKeyServiceServer).KeyServiceDebug(ctx, req.(*KeyInputDebug))
 	}
 	return interceptor(ctx, in, info, handler)

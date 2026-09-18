@@ -14,7 +14,7 @@ func WinputInitWithWindow(useStaticIndex bool, index int) (*winput.Window, error
 		slog.Debug("Find By Process Name Error")
 		return nil, err
 	}
-	slog.Debug("debug: length of window:", len(windows))
+	slog.Debug("debug: length of window", "len", len(windows))
 	var target *winput.Window
 	target = nil
 	if useStaticIndex {

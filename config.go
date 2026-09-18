@@ -79,11 +79,9 @@ func LogLevel2slogLevel(logLevel LogLevel) slog.Level {
 }
 
 type Config struct {
-	EnabledDriveName  DriveName `json:"driveName"`         // 驱动
-	GRPCAddress       string    `json:"gRPCAddress"`       // 监听地址
-	ConnectionTimeOut int       `json:"connectionTimeOut"` // 连接超时，单位 秒
-	ActionTimeout     int       `json:"actionTimeout"`     // ctx，单位 毫秒
-	LogLevel          LogLevel  `json:"logLevel"`          // 日志等级
+	EnabledDriveName DriveName `json:"driveName"`   // 驱动
+	GRPCAddress      string    `json:"gRPCAddress"` // 监听地址
+	LogLevel         LogLevel  `json:"logLevel"`    // 日志等级
 }
 
 var GlobalConfig Config
@@ -93,11 +91,9 @@ func LoadConfig() error {
 	if os.IsNotExist(err) {
 		slog.Warn("config.json not found, using defaults")
 		defaultConfig := Config{
-			EnabledDriveName:  DriveMakc,
-			GRPCAddress:       "localhost:50051",
-			ConnectionTimeOut: 5,
-			ActionTimeout:     5,
-			LogLevel:          LogLevelInfo,
+			EnabledDriveName: DriveMakc,
+			GRPCAddress:      "localhost:50051",
+			LogLevel:         LogLevelInfo,
 		}
 		jsonBytes, err := json.MarshalIndent(defaultConfig, "", "  ")
 		if err != nil {

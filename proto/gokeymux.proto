@@ -7,6 +7,7 @@ package GoKeyMux;
 message keyInput {
   string key = 1;
   bool isRune = 2;
+  bool isPressed = 3;
 }
 
 message keyReturn {
@@ -17,8 +18,9 @@ message keyReturn {
 message keyInputDebug {
   string key = 1;
   bool isRune = 2;
-  string timeStamp = 3;
-  string metaData = 4;
+  bool isPressed = 3;
+  string timeStamp = 4;
+  string metaData = 5;
 }
 
 message keyReturnDebug {

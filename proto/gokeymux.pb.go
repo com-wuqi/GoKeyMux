@@ -25,6 +25,7 @@ type KeyInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	IsRune        bool                   `protobuf:"varint,2,opt,name=isRune,proto3" json:"isRune,omitempty"`
+	IsPressed     bool                   `protobuf:"varint,3,opt,name=isPressed,proto3" json:"isPressed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -69,6 +70,13 @@ func (x *KeyInput) GetKey() string {
 func (x *KeyInput) GetIsRune() bool {
 	if x != nil {
 		return x.IsRune
+	}
+	return false
+}
+
+func (x *KeyInput) GetIsPressed() bool {
+	if x != nil {
+		return x.IsPressed
 	}
 	return false
 }
@@ -129,8 +137,9 @@ type KeyInputDebug struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	IsRune        bool                   `protobuf:"varint,2,opt,name=isRune,proto3" json:"isRune,omitempty"`
-	TimeStamp     string                 `protobuf:"bytes,3,opt,name=timeStamp,proto3" json:"timeStamp,omitempty"`
-	MetaData      string                 `protobuf:"bytes,4,opt,name=metaData,proto3" json:"metaData,omitempty"`
+	IsPressed     bool                   `protobuf:"varint,3,opt,name=isPressed,proto3" json:"isPressed,omitempty"`
+	TimeStamp     string                 `protobuf:"bytes,4,opt,name=timeStamp,proto3" json:"timeStamp,omitempty"`
+	MetaData      string                 `protobuf:"bytes,5,opt,name=metaData,proto3" json:"metaData,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -175,6 +184,13 @@ func (x *KeyInputDebug) GetKey() string {
 func (x *KeyInputDebug) GetIsRune() bool {
 	if x != nil {
 		return x.IsRune
+	}
+	return false
+}
+
+func (x *KeyInputDebug) GetIsPressed() bool {
+	if x != nil {
+		return x.IsPressed
 	}
 	return false
 }
@@ -257,18 +273,20 @@ var File_proto_gokeymux_proto protoreflect.FileDescriptor
 
 const file_proto_gokeymux_proto_rawDesc = "" +
 	"\n" +
-	"\x14proto/gokeymux.proto\x12\bGoKeyMux\"4\n" +
+	"\x14proto/gokeymux.proto\x12\bGoKeyMux\"R\n" +
 	"\bkeyInput\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x16\n" +
-	"\x06isRune\x18\x02 \x01(\bR\x06isRune\"E\n" +
+	"\x06isRune\x18\x02 \x01(\bR\x06isRune\x12\x1c\n" +
+	"\tisPressed\x18\x03 \x01(\bR\tisPressed\"E\n" +
 	"\tkeyReturn\x12\x1c\n" +
 	"\tisAllDone\x18\x01 \x01(\bR\tisAllDone\x12\x1a\n" +
-	"\bmetaData\x18\x02 \x01(\tR\bmetaData\"s\n" +
+	"\bmetaData\x18\x02 \x01(\tR\bmetaData\"\x91\x01\n" +
 	"\rkeyInputDebug\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x16\n" +
 	"\x06isRune\x18\x02 \x01(\bR\x06isRune\x12\x1c\n" +
-	"\ttimeStamp\x18\x03 \x01(\tR\ttimeStamp\x12\x1a\n" +
-	"\bmetaData\x18\x04 \x01(\tR\bmetaData\"a\n" +
+	"\tisPressed\x18\x03 \x01(\bR\tisPressed\x12\x1c\n" +
+	"\ttimeStamp\x18\x04 \x01(\tR\ttimeStamp\x12\x1a\n" +
+	"\bmetaData\x18\x05 \x01(\tR\bmetaData\"a\n" +
 	"\x0ekeyReturnDebug\x12\x1f\n" +
 	"\vis_finished\x18\x01 \x01(\bR\n" +
 	"isFinished\x12\x10\n" +
@@ -318,7 +336,7 @@ func file_proto_gokeymux_proto_init() {
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
-			GoPackagePath: reflect.TypeFor[x]().PkgPath(),
+			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_gokeymux_proto_rawDesc), len(file_proto_gokeymux_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   4,

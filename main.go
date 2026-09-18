@@ -1,17 +1,14 @@
 package main
 
 import (
-	"context"
 	"log/slog"
 	"os"
-
-	"github.com/rpdg/winput"
 )
 
 func main() {
 	err := LoadConfig()
 	if err != nil {
-		slog.Error("Error loading config: ", err)
+		slog.Error("Error loading config", "err", err)
 		return
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -19,81 +16,17 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	// makc
-	makcInputClient, err := MakcInputInit()
+	server, serverErrCh, err := StartService()
 	if err != nil {
-		slog.Debug("MakcInputInit() failed: %v", err)
-	}
-	defer MakcInputClose(makcInputClient)
-	// winput Message
-	targetWindow, err := WinputInitWithWindow(false, -1)
-	if err != nil {
-		slog.Debug("WinputInitWithWindow() failed: %v", err)
-	}
-	// winput Interception
-	err = WinputWithInterceptionInit()
-	if err != nil {
-		slog.Debug("WinputWithInterceptionInit() failed: %v", err)
-	} // win input
-	// fakerInput
-	fakerInputClient, err := FakerInputInit()
-	if err != nil {
-		slog.Debug("FakerInputInit() failed: %v", err)
-	}
-	defer func(fakerInputClient *FakerInputDevice) {
-		err := fakerInputClient.Close()
-		if err != nil {
-			slog.Debug("FakerInputClient.Close() failed: %v", err)
-		}
-	}(fakerInputClient)
-
-	// keycode
-	codeA, ok := KeyCodesFromRune('a')
-	if !ok {
-		slog.Debug("KeyCodesFromRune('a') failed")
-	}
-	codeB, ok := KeyCodesFromRune('b')
-	if !ok {
-		slog.Debug("KeyCodesFromRune('b') failed")
-	}
-	codeC, ok := KeyCodesFromRune('c')
-	if !ok {
-		slog.Debug("KeyCodesFromRune('c') failed")
-	}
-	codeD, ok := KeyCodesFromRune('d')
-	if !ok {
-		slog.Debug("KeyCodesFromRune('d') failed")
+		slog.Error("Error starting service", "err", err)
+		return
 	}
 
-	// run
-	ctx := context.Background()
-
-	if makcInputClient != nil {
-		if err := makcInputClient.Keyboard.Tap(ctx, codeA.Makc); err != nil {
-			slog.Debug("MakcInputClient.Keyboard.Tap() failed: %v", err)
-		}
-	} else {
-		slog.Debug("MakcInputClient is nil, skip")
-	}
-
-	if err := winput.Press(codeB.Winput); err != nil {
-		slog.Debug("winput.Press() failed: %v", err)
-	}
-
-	if targetWindow != nil {
-		if err := targetWindow.Press(codeC.Winput); err != nil {
-			slog.Debug("targetWindow.Press() failed: %v", err)
-		}
-	} else {
-		slog.Debug("targetWindow is nil, skip")
-	}
-
-	if fakerInputClient != nil {
-		if err := fakerInputClient.Tap(codeD.FakerInput, codeD.Modifiers); err != nil {
-			slog.Debug("FakerInputClient.Tap() failed: %v", err)
-		}
-	} else {
-		slog.Debug("FakerInputClient is nil, skip")
+	// clean up
+	server.GracefulStop()
+	err, ok := <-serverErrCh
+	if ok {
+		slog.Warn("Error stopping service", "err", err)
 	}
 
 }
