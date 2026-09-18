@@ -10,9 +10,11 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/status"
 )
 
 type GoKeyMuxService struct {
@@ -49,6 +51,26 @@ func (s *GoKeyMuxService) KeyServiceDebug(ctx context.Context, req *pb.KeyInputD
 	}
 }
 
+func UnaryServerLogging(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	start := time.Now()
+	resp, err := handler(ctx, req)
+	duration := time.Since(start)
+	st, _ := status.FromError(err)
+	level := slog.LevelWarn
+	switch st.Code() {
+	case codes.OK:
+		level = slog.LevelDebug
+	case codes.Internal, codes.Unavailable, codes.DataLoss, codes.Unknown:
+		level = slog.LevelError
+	}
+	slog.Default().LogAttrs(ctx, level, "grpc.unary",
+		slog.String("method", info.FullMethod),
+		slog.Duration("duration", duration),
+		slog.String("status", st.Code().String()),
+	)
+	return resp, err
+}
+
 func StartService() (*grpc.Server, <-chan error, error) {
 	ln, err := net.Listen("tcp4", GlobalConfig.GRPCAddress)
 	if err != nil {
@@ -58,15 +80,16 @@ func StartService() (*grpc.Server, <-chan error, error) {
 	hs.SetServingStatus("GoKeyMux.rpcKeyService", healthpb.HealthCheckResponse_SERVING)
 	server := grpc.NewServer(
 		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Time:              2 * time.Second,
-			Timeout:           1 * time.Second,
-			MaxConnectionIdle: 120 * time.Second, // 空闲后关闭连接
+			Time:              time.Duration(GlobalConfig.GRPCKeepaliveTime) * time.Second,
+			Timeout:           time.Duration(GlobalConfig.GRPCKeepaliveTimeOut) * time.Second,
+			MaxConnectionIdle: time.Duration(GlobalConfig.GRPCKeepaliveMaxConnectionIdle) * time.Second,
 		}),
 		// 服务端 enforcement：限制客户端 ping 频率与无流 ping。
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             10 * time.Second,
-			PermitWithoutStream: false,
+			MinTime:             time.Duration(GlobalConfig.GRPCEnforcementPolicyMinTime) * time.Second,
+			PermitWithoutStream: GlobalConfig.GRPCEnforcementPermitWithoutStream,
 		}),
+		grpc.UnaryInterceptor(UnaryServerLogging),
 	)
 	pb.RegisterRpcKeyServiceServer(server, &GoKeyMuxService{})
 	healthpb.RegisterHealthServer(server, hs)
