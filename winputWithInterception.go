@@ -29,7 +29,7 @@ type systemInfo struct {
 
 func GetNativeSystemInfo() uint16 {
 	var si systemInfo
-	procGetNativeSystemInfo.Call(uintptr(unsafe.Pointer(&si)))
+	_, _, _ = procGetNativeSystemInfo.Call(uintptr(unsafe.Pointer(&si)))
 	return si.ProcessorArchitecture
 }
 
@@ -72,4 +72,14 @@ func WinputWithInterceptionInit() error {
 	}
 	return nil
 
+}
+
+func WinputWithInterceptionPress(key KeyCodes) error {
+	// TODO
+	return fmt.Errorf("unavailable")
+}
+
+func WinputWithInterceptionRelease(key KeyCodes) error {
+	// TODO
+	return fmt.Errorf("unavailable")
 }

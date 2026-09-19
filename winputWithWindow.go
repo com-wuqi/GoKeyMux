@@ -7,7 +7,7 @@ import (
 	"github.com/rpdg/winput"
 )
 
-func WinputInitWithWindow(useStaticIndex bool, index int) (*winput.Window, error) {
+func WinputInitWithWindow() (*winput.Window, error) {
 	slog.Debug("WinputInitWithWindow")
 	windows, err := winput.FindByProcessName("notepad.exe")
 	if err != nil {
@@ -17,11 +17,11 @@ func WinputInitWithWindow(useStaticIndex bool, index int) (*winput.Window, error
 	slog.Debug("debug: length of window", "len", len(windows))
 	var target *winput.Window
 	target = nil
-	if useStaticIndex {
-		if index < 0 || index >= len(windows) {
+	if GlobalConfig.WinputWindowUseStaticIndex {
+		if GlobalConfig.WinputWindowIndex < 0 || GlobalConfig.WinputWindowIndex >= len(windows) {
 			return nil, errors.New("index out of range")
 		}
-		target = windows[index]
+		target = windows[GlobalConfig.WinputWindowIndex]
 	} else {
 		for _, window := range windows {
 			if window.IsValid() && window.IsVisible() {
@@ -37,10 +37,10 @@ func WinputInitWithWindow(useStaticIndex bool, index int) (*winput.Window, error
 	return target, err
 }
 
-func WinputPress(target *winput.Window, key KeyCodes) error {
+func WinputWithWindowPress(target *winput.Window, key KeyCodes) error {
 	return target.KeyDown(key.Winput)
 }
 
-func WinputRelease(target *winput.Window, key KeyCodes) error {
+func WinputWithWindowRelease(target *winput.Window, key KeyCodes) error {
 	return target.KeyUp(key.Winput)
 }

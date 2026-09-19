@@ -17,16 +17,6 @@ func MakcInputInit() (*makc.Client, error) {
 	return client, nil
 }
 
-func MakcInputClose(client *makc.Client) {
-	if client == nil {
-		return
-	}
-	err := client.Close()
-	if err != nil {
-		slog.Warn("FakerInputClose failed")
-	}
-}
-
 func MakcInputPress(client *makc.Client, key KeyCodes, ctx context.Context) error {
 	if client == nil {
 		slog.Error("FakerInputPress failed: client is nil")

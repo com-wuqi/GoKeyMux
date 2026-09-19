@@ -21,7 +21,7 @@ func main() {
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	slog.Info("starting server")
+	slog.Info("server starting")
 	server, serverErrCh, err := StartService()
 	if err != nil {
 		slog.Error("Error starting service", "err", err)
@@ -33,7 +33,7 @@ func main() {
 		go func() { server.GracefulStop(); close(done) }()
 		select {
 		case <-done:
-			slog.Info("server done")
+			slog.Info("server stopped")
 		case <-time.After(time.Duration(GlobalConfig.GRPCServerShutdownTimeout) * time.Second):
 			slog.Warn("Shutdown service timed out, use Stop")
 			server.Stop()
@@ -42,6 +42,22 @@ func main() {
 			slog.Warn("Error stopping service", "err", err)
 		}
 	}()
+
+	engine := NewEngine()
+	err = engine.StartEngine()
+	slog.Info("engine starting")
+	if err != nil {
+		slog.Error("Error starting engine", "err", err)
+		return
+	}
+	slog.Info("engine started")
+	defer func(engine *Engine) {
+		err := engine.CloseEngine()
+		if err != nil {
+			slog.Error("Error closing engine", "err", err)
+		}
+		slog.Info("engine closed")
+	}(engine)
 
 	<-sigCh
 }

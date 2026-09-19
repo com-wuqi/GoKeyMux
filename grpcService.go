@@ -24,6 +24,7 @@ type GoKeyMuxService struct {
 func (s *GoKeyMuxService) KeyService(stream pb.RpcKeyService_KeyServiceServer) error {
 	for {
 		req, err := stream.Recv()
+		// TODO
 		if err == io.EOF {
 			return stream.SendAndClose(&pb.KeyReturn{
 				IsAllDone: false,
@@ -38,7 +39,7 @@ func (s *GoKeyMuxService) KeyService(stream pb.RpcKeyService_KeyServiceServer) e
 }
 
 func (s *GoKeyMuxService) KeyServiceDebug(ctx context.Context, req *pb.KeyInputDebug) (*pb.KeyReturnDebug, error) {
-	slog.Debug("Received key request", "req", req)
+	// TODO
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
