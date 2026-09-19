@@ -51,24 +51,49 @@ func (s *GoKeyMuxService) KeyServiceDebug(ctx context.Context, req *pb.KeyInputD
 	}
 }
 
+// logLevelForCode maps a gRPC status code to the slog level used for the
+// request/stream log line. Successful calls are debug-level, so they only show
+// when the configured log level is debug.
+func logLevelForCode(code codes.Code) slog.Level {
+	switch code {
+	case codes.OK:
+		return slog.LevelDebug
+	case codes.Internal, codes.Unavailable, codes.DataLoss, codes.Unknown:
+		return slog.LevelError
+	default:
+		return slog.LevelWarn
+	}
+}
+
 func UnaryServerLogging(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 	start := time.Now()
 	resp, err := handler(ctx, req)
 	duration := time.Since(start)
 	st, _ := status.FromError(err)
-	level := slog.LevelWarn
-	switch st.Code() {
-	case codes.OK:
-		level = slog.LevelDebug
-	case codes.Internal, codes.Unavailable, codes.DataLoss, codes.Unknown:
-		level = slog.LevelError
-	}
-	slog.Default().LogAttrs(ctx, level, "grpc.unary",
+	slog.Default().LogAttrs(ctx, logLevelForCode(st.Code()), "grpc.unary",
 		slog.String("method", info.FullMethod),
 		slog.Duration("duration", duration),
 		slog.String("status", st.Code().String()),
 	)
 	return resp, err
+}
+
+// StreamServerLogging is the streaming counterpart of UnaryServerLogging. The
+// main keyService RPC is a client-streaming method, so without this interceptor
+// no log line is emitted for it (grpc.UnaryInterceptor only covers unary calls).
+func StreamServerLogging(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	start := time.Now()
+	err := handler(srv, ss)
+	duration := time.Since(start)
+	st, _ := status.FromError(err)
+	slog.Default().LogAttrs(ss.Context(), logLevelForCode(st.Code()), "grpc.stream",
+		slog.String("method", info.FullMethod),
+		slog.Bool("is_client_stream", info.IsClientStream),
+		slog.Bool("is_server_stream", info.IsServerStream),
+		slog.Duration("duration", duration),
+		slog.String("status", st.Code().String()),
+	)
+	return err
 }
 
 func StartService() (*grpc.Server, <-chan error, error) {
@@ -90,6 +115,7 @@ func StartService() (*grpc.Server, <-chan error, error) {
 			PermitWithoutStream: GlobalConfig.GRPCEnforcementPermitWithoutStream,
 		}),
 		grpc.UnaryInterceptor(UnaryServerLogging),
+		grpc.StreamInterceptor(StreamServerLogging),
 	)
 	pb.RegisterRpcKeyServiceServer(server, &GoKeyMuxService{})
 	healthpb.RegisterHealthServer(server, hs)

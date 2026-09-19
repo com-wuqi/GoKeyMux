@@ -36,3 +36,11 @@ func WinputInitWithWindow(useStaticIndex bool, index int) (*winput.Window, error
 	}
 	return target, err
 }
+
+func WinputPress(target *winput.Window, key KeyCodes) error {
+	return target.KeyDown(key.Winput)
+}
+
+func WinputRelease(target *winput.Window, key KeyCodes) error {
+	return target.KeyUp(key.Winput)
+}

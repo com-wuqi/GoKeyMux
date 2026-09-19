@@ -16,20 +16,19 @@ func TestPutUint32LE(t *testing.T) {
 	}
 }
 
-func TestBuildKeyboardReport(t *testing.T) {
-	got := buildKeyboardReport(ModLCtrl|ModLShift, [fakerInputKeyCodeCount]byte{fakerInputKeyA, fakerInputKeyB, 0, 0, 0, 0})
-	want := []byte{0x01, ModLCtrl | ModLShift, 0x00, fakerInputKeyA, fakerInputKeyB, 0, 0, 0, 0}
-	if !bytes.Equal(got, want) {
-		t.Fatalf("buildKeyboardReport = %v, want %v", got, want)
+func TestFillKeyboardReport(t *testing.T) {
+	var got [fakerInputKeyboardReportSize]byte
+	fillKeyboardReport(&got, ModLCtrl|ModLShift, [fakerInputKeyCodeCount]byte{fakerInputKeyA, fakerInputKeyB, 0, 0, 0, 0})
+	want := [fakerInputKeyboardReportSize]byte{0x01, ModLCtrl | ModLShift, 0x00, fakerInputKeyA, fakerInputKeyB, 0, 0, 0, 0}
+	if got != want {
+		t.Fatalf("fillKeyboardReport = %v, want %v", got, want)
 	}
 }
 
-func TestWriteControlReportLayout(t *testing.T) {
+func TestFillControlReportLayout(t *testing.T) {
 	inner := []byte{0x01, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00}
-	report := buildControlReport(inner)
-	if len(report) != 65 {
-		t.Fatalf("unexpected report length: %d, want 65", len(report))
-	}
+	var report [65]byte
+	fillControlReport(&report, inner)
 	if report[0] != fakerInputReportIDControl {
 		t.Fatalf("unexpected report ID: %#x, want %#x", report[0], fakerInputReportIDControl)
 	}
@@ -39,6 +38,141 @@ func TestWriteControlReportLayout(t *testing.T) {
 	if !bytes.Equal(report[2:2+len(inner)], inner) {
 		t.Fatalf("inner report mismatch: %v", report[2:])
 	}
+	if !bytes.Equal(report[2+len(inner):], make([]byte, 65-2-len(inner))) {
+		t.Fatalf("padding is not zeroed: %v", report[2+len(inner):])
+	}
+}
+
+// TestKeyDownAccumulates verifies that pressing multiple distinct keys holds
+// them all simultaneously (press a, press b = hold ab).
+func TestKeyDownAccumulates(t *testing.T) {
+	d := &FakerInputDevice{}
+	d.keyDownLocked(fakerInputKeyA, 0)
+	d.keyDownLocked(fakerInputKeyB, 0)
+
+	if d.keyCount != 2 {
+		t.Fatalf("keyCount = %d, want 2", d.keyCount)
+	}
+	mods, keys := d.heldState()
+	if mods != 0 {
+		t.Fatalf("mods = %#x, want 0", mods)
+	}
+	if !containsKey(keys, fakerInputKeyA) || !containsKey(keys, fakerInputKeyB) {
+		t.Fatalf("held keys = %v, want a and b", keys)
+	}
+}
+
+// TestKeyDownIdempotent verifies pressing the same key twice does not create a
+// duplicate slot or double up.
+func TestKeyDownIdempotent(t *testing.T) {
+	d := &FakerInputDevice{}
+	d.keyDownLocked(fakerInputKeyA, 0)
+	d.keyDownLocked(fakerInputKeyA, 0)
+
+	if d.keyCount != 1 {
+		t.Fatalf("keyCount = %d, want 1", d.keyCount)
+	}
+}
+
+// TestKeyUpReleasesSingle verifies releasing one key leaves the other held.
+func TestKeyUpReleasesSingle(t *testing.T) {
+	d := &FakerInputDevice{}
+	d.keyDownLocked(fakerInputKeyA, 0)
+	d.keyDownLocked(fakerInputKeyB, 0)
+	d.keyUpLocked(fakerInputKeyA, 0)
+
+	if d.keyCount != 1 {
+		t.Fatalf("keyCount = %d, want 1", d.keyCount)
+	}
+	_, keys := d.heldState()
+	if containsKey(keys, fakerInputKeyA) || !containsKey(keys, fakerInputKeyB) {
+		t.Fatalf("held keys = %v, want only b", keys)
+	}
+}
+
+// TestModifierUnion verifies modifiers are reference-counted: releasing a
+// shifted key does not drop shift while another shifted key is still held.
+func TestModifierUnion(t *testing.T) {
+	d := &FakerInputDevice{}
+	d.keyDownLocked(fakerInputKeyA, ModLShift)
+	d.keyDownLocked(fakerInputKey2, ModLShift) // '@' shares shift
+	d.keyUpLocked(fakerInputKeyA, ModLShift)
+
+	mods, keys := d.heldState()
+	if mods&ModLShift == 0 {
+		t.Fatalf("shift was dropped while another shifted key is still held: mods=%#x", mods)
+	}
+	if containsKey(keys, fakerInputKeyA) || !containsKey(keys, fakerInputKey2) {
+		t.Fatalf("held keys = %v, want only 2", keys)
+	}
+}
+
+// TestKeyUpClearsModifiersOnEmptyMask verifies a key stays held while it still
+// has a modifier mask, and is removed once its mask is empty.
+func TestKeyUpClearsModifiersOnEmptyMask(t *testing.T) {
+	d := &FakerInputDevice{}
+	d.keyDownLocked(fakerInputKeyA, ModLShift)
+	d.keyDownLocked(fakerInputKeyA, ModLCtrl) // accumulates ctrl on the same key
+	if d.keyCount != 1 {
+		t.Fatalf("keyCount = %d, want 1", d.keyCount)
+	}
+
+	d.keyUpLocked(fakerInputKeyA, ModLCtrl)
+	if d.keyCount != 1 {
+		t.Fatalf("key still should be held: keyCount = %d, want 1", d.keyCount)
+	}
+	mods, _ := d.heldState()
+	if mods != ModLShift {
+		t.Fatalf("mods = %#x, want %#x", mods, ModLShift)
+	}
+
+	d.keyUpLocked(fakerInputKeyA, ModLShift)
+	if d.keyCount != 0 {
+		t.Fatalf("key should be released: keyCount = %d, want 0", d.keyCount)
+	}
+}
+
+// TestKeyDownSixKeyCap verifies the held set is capped at 6 keys.
+func TestKeyDownSixKeyCap(t *testing.T) {
+	d := &FakerInputDevice{}
+	codes := []byte{
+		fakerInputKeyA, fakerInputKeyB, fakerInputKeyC, fakerInputKeyD,
+		fakerInputKeyE, fakerInputKeyF, fakerInputKeyG,
+	}
+	for _, c := range codes {
+		d.keyDownLocked(c, 0)
+	}
+	if d.keyCount != fakerInputKeyCodeCount {
+		t.Fatalf("keyCount = %d, want %d", d.keyCount, fakerInputKeyCodeCount)
+	}
+}
+
+// TestReleaseAll verifies ReleaseAll clears the held-key state.
+func TestReleaseAll(t *testing.T) {
+	d := &FakerInputDevice{}
+	d.keyDownLocked(fakerInputKeyA, ModLShift)
+	d.keyDownLocked(fakerInputKeyB, ModLCtrl)
+	d.releaseAllLocked()
+
+	if d.keyCount != 0 {
+		t.Fatalf("keyCount = %d, want 0", d.keyCount)
+	}
+	mods, keys := d.heldState()
+	if mods != 0 {
+		t.Fatalf("mods = %#x, want 0", mods)
+	}
+	if keys != [fakerInputKeyCodeCount]byte{} {
+		t.Fatalf("keys = %v, want empty", keys)
+	}
+}
+
+func containsKey(keys [fakerInputKeyCodeCount]byte, code byte) bool {
+	for _, k := range keys {
+		if k == code {
+			return true
+		}
+	}
+	return false
 }
 
 // TestKeyCodesFromRune verifies a representative sample of runes against

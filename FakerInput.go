@@ -62,9 +62,25 @@ type hidAttributes struct {
 }
 
 // FakerInputDevice is an open handle to the FakerInput virtual HID device.
+// It tracks the currently held keyboard state (up to 6 key codes plus a
+// per-key modifier mask) so that KeyDown/KeyUp can be issued independently
+// without clobbering other held keys.
 type FakerInputDevice struct {
 	mu     sync.Mutex
 	handle windows.Handle
+
+	// Held key slots. Each slot stores one key code and the modifier flags
+	// that were requested while that key is held. modifiers reported to the
+	// device is the bitwise-OR of keyMods[0:keyCount], which gives correct
+	// reference-counted behaviour when several held keys share a modifier.
+	keys     [fakerInputKeyCodeCount]byte
+	keyMods  [fakerInputKeyCodeCount]byte
+	keyCount int
+
+	// reportBuf is a reusable control report buffer. It is only touched while
+	// mu is held, so it needs no further synchronization and avoids a heap
+	// allocation on every key event.
+	reportBuf [65]byte
 }
 
 // FakerInputInit finds and opens the FakerInput control collection, the handle
@@ -186,23 +202,37 @@ func (d *FakerInputDevice) CheckAPIVersion() (uint32, error) {
 	return version, nil
 }
 
-// KeyDown presses a single key with optional modifier flags held.
+// KeyDown presses a single key and keeps it held. The key is added to the
+// device's held-key set, so repeatedly calling KeyDown with different codes
+// accumulates keys (e.g. KeyDown(a) then KeyDown(b) holds both). modifiers
+// flags are held for this key while it is down; pressing an already-held code
+// ORs the new modifiers into it.
 func (d *FakerInputDevice) KeyDown(code byte, modifiers byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.keyDownLocked(code, modifiers)
 }
 
-// KeyUp releases all keys and modifiers.
-func (d *FakerInputDevice) KeyUp() error {
+// KeyUp releases a single previously held key. If modifiers is non-zero, only
+// those modifier flags are cleared from the key's slot; the key itself remains
+// held until its modifier mask is empty. modifiers must mirror the flags that
+// were held by the matching KeyDown.
+func (d *FakerInputDevice) KeyUp(code byte, modifiers byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.keyUpLocked()
+	return d.keyUpLocked(code, modifiers)
 }
 
-// SetKeys holds the given keys (up to 6) and modifiers simultaneously. Codes
-// beyond the first 6 are ignored; an empty slice releases all keys. This is the
-// primitive for multi-key combos and for releasing keys one at a time.
+// ReleaseAll releases every held key and modifier at once.
+func (d *FakerInputDevice) ReleaseAll() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.releaseAllLocked()
+}
+
+// SetKeys replaces the held-key state with the given keys (up to 6) and a
+// single modifier mask applied to all of them. Codes beyond the first 6 are
+// ignored; an empty slice releases all keys.
 func (d *FakerInputDevice) SetKeys(codes []byte, modifiers byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -234,69 +264,120 @@ func (d *FakerInputDevice) TypeText(s string) error {
 }
 
 func (d *FakerInputDevice) keyDownLocked(code byte, modifiers byte) error {
-	return d.setKeysLocked([]byte{code}, modifiers)
+	if code != 0 {
+		for i := 0; i < d.keyCount; i++ {
+			if d.keys[i] == code {
+				d.keyMods[i] |= modifiers
+				return d.sendHeldLocked()
+			}
+		}
+		if d.keyCount < fakerInputKeyCodeCount {
+			d.keys[d.keyCount] = code
+			d.keyMods[d.keyCount] = modifiers
+			d.keyCount++
+		}
+	}
+	return d.sendHeldLocked()
 }
 
-func (d *FakerInputDevice) keyUpLocked() error {
-	return d.setKeysLocked(nil, 0)
+func (d *FakerInputDevice) keyUpLocked(code byte, modifiers byte) error {
+	if code != 0 {
+		for i := 0; i < d.keyCount; i++ {
+			if d.keys[i] == code {
+				d.keyMods[i] &^= modifiers
+				if d.keyMods[i] == 0 {
+					d.keyCount--
+					d.keys[i] = d.keys[d.keyCount]
+					d.keyMods[i] = d.keyMods[d.keyCount]
+				}
+				break
+			}
+		}
+	}
+	return d.sendHeldLocked()
 }
 
 func (d *FakerInputDevice) setKeysLocked(codes []byte, modifiers byte) error {
-	var keys [fakerInputKeyCodeCount]byte
-	n := min(len(codes), fakerInputKeyCodeCount)
-	copy(keys[:], codes[:n])
-	return d.sendKeyboardReport(modifiers, keys)
+	d.keyCount = 0
+	for _, c := range codes {
+		if c == 0 {
+			continue
+		}
+		if d.keyCount >= fakerInputKeyCodeCount {
+			break
+		}
+		d.keys[d.keyCount] = c
+		d.keyMods[d.keyCount] = modifiers
+		d.keyCount++
+	}
+	return d.sendHeldLocked()
+}
+
+func (d *FakerInputDevice) releaseAllLocked() error {
+	return d.setKeysLocked(nil, 0)
 }
 
 func (d *FakerInputDevice) tapLocked(code byte, modifiers byte) error {
 	if err := d.keyDownLocked(code, modifiers); err != nil {
 		return err
 	}
-	return d.keyUpLocked()
+	return d.keyUpLocked(code, modifiers)
 }
 
-// buildKeyboardReport assembles the 9-byte keyboard input report:
+// heldState returns the effective keyboard state: the OR of all held keys'
+// modifier masks, and the ordered held key codes (trailing slots zeroed).
+func (d *FakerInputDevice) heldState() (mods byte, keys [fakerInputKeyCodeCount]byte) {
+	copy(keys[:], d.keys[:d.keyCount])
+	for i := 0; i < d.keyCount; i++ {
+		mods |= d.keyMods[i]
+	}
+	return mods, keys
+}
+
+// sendHeldLocked assembles the current held-key state and writes it to the
+// device.
+func (d *FakerInputDevice) sendHeldLocked() error {
+	mods, keys := d.heldState()
+	return d.sendKeyboardReportLocked(mods, keys)
+}
+
+// fillKeyboardReport assembles a 9-byte keyboard input report into dst:
 // report ID (0x01), shift-key flags, reserved byte, then up to 6 key codes.
-func buildKeyboardReport(modifiers byte, keys [fakerInputKeyCodeCount]byte) []byte {
-	inner := make([]byte, fakerInputKeyboardReportSize)
-	inner[0] = fakerInputReportIDKeyboard
-	inner[1] = modifiers
-	inner[2] = 0
-	copy(inner[3:], keys[:])
-	return inner
+func fillKeyboardReport(dst *[fakerInputKeyboardReportSize]byte, modifiers byte, keys [fakerInputKeyCodeCount]byte) {
+	dst[0] = fakerInputReportIDKeyboard
+	dst[1] = modifiers
+	dst[2] = 0
+	copy(dst[3:], keys[:])
 }
 
-// sendKeyboardReport injects a 9-byte keyboard input report via the control report.
-func (d *FakerInputDevice) sendKeyboardReport(modifiers byte, keys [fakerInputKeyCodeCount]byte) error {
-	return d.writeControlReport(buildKeyboardReport(modifiers, keys))
-}
-
-// buildControlReport wraps inner in a full 65-byte control output report
+// fillControlReport wraps inner in a full 65-byte control output report
 // (CONTROL_REPORT_SIZE = 0x41). Layout, matching FakerInputDll:
 //
 //	[0]     = ReportID (0x40), also serves as the hidclass routing report ID
 //	[1]     = ReportLength (len(inner))
-//	[2..]   = inner report
+//	[2.]   = inner report
 //	rest    = zero padding
-func buildControlReport(inner []byte) []byte {
-	report := make([]byte, 65)
-	report[0] = fakerInputReportIDControl
-	report[1] = byte(len(inner))
-	copy(report[2:], inner)
-	return report
+func fillControlReport(dst *[65]byte, inner []byte) {
+	dst[0] = fakerInputReportIDControl
+	dst[1] = byte(len(inner))
+	copy(dst[2:], inner)
+	clear(dst[2+len(inner):])
 }
 
-// writeControlReport wraps inner in a control report and writes it to the device.
-func (d *FakerInputDevice) writeControlReport(inner []byte) error {
+// sendKeyboardReportLocked writes a keyboard input report into the device's
+// reusable report buffer and injects it via the control report. It performs no
+// heap allocation.
+func (d *FakerInputDevice) sendKeyboardReportLocked(modifiers byte, keys [fakerInputKeyCodeCount]byte) error {
 	if d == nil || d.handle == windows.InvalidHandle {
 		return errors.New("FakerInput device is not open")
 	}
-	if len(inner) > 62 {
-		return fmt.Errorf("FakerInput inner report too large: %d", len(inner))
-	}
+
+	var inner [fakerInputKeyboardReportSize]byte
+	fillKeyboardReport(&inner, modifiers, keys)
+	fillControlReport(&d.reportBuf, inner[:])
 
 	var written uint32
-	if err := windows.WriteFile(d.handle, buildControlReport(inner), &written, nil); err != nil {
+	if err := windows.WriteFile(d.handle, d.reportBuf[:], &written, nil); err != nil {
 		return fmt.Errorf("write FakerInput control report: %w", err)
 	}
 	return nil

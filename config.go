@@ -88,6 +88,9 @@ type Config struct {
 	GRPCEnforcementPolicyMinTime       int       `json:"gRPCEnforcementPolicyMinTime"`       // EnforcementPolicy MinTime 单位 秒
 	GRPCEnforcementPermitWithoutStream bool      `json:"gRPCEnforcementPermitWithoutStream"` // EnforcementPolicy PermitWithoutStream
 	GRPCServerShutdownTimeout          int       `json:"gRPCServerShutdownTimeout"`          // 服务关闭超时
+	WinputWindowProcessName            string    `json:"winputWindowProcessName"`            // (winput无Interception驱动) FindByProcessName
+	WinputWindowUseStaticIndex         bool      `json:"winputWindowUseStaticIndex"`         // (winput无Interception驱动) 是否使用固定index
+	WinputWindowIndex                  int       `json:"winputWindowIndex"`                  // (winput无Interception驱动) 窗口index
 }
 
 var GlobalConfig Config
@@ -106,6 +109,9 @@ func LoadConfig() error {
 			GRPCEnforcementPolicyMinTime:       10,
 			GRPCEnforcementPermitWithoutStream: true,
 			GRPCServerShutdownTimeout:          10,
+			WinputWindowProcessName:            "Game.exe",
+			WinputWindowUseStaticIndex:         true,
+			WinputWindowIndex:                  0,
 		}
 		jsonBytes, err := json.MarshalIndent(defaultConfig, "", "  ")
 		if err != nil {
