@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/aiwaki/makc"
@@ -77,12 +78,31 @@ func (e *Engine) CloseEngine() error {
 	}
 }
 
-func (e *Engine) EnginePress() error {
+func (e *Engine) EnginePress(ctx context.Context, keys ...KeyCodes) error {
 	// TODO
-	return fmt.Errorf("unavailable")
+	switch GlobalConfig.EnabledDriveName {
+	case DriveMakc:
+		{
+			if client, ok := e.driveClient.(*makc.Client); ok {
+				for _, key := range keys {
+					if err := MakcInputPress(client, key, ctx); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			return fmt.Errorf("drive is not ‘*make.Client’")
+		}
+	case DriveFakerInput:
+		return nil
+	case DriveWinputWithWindow, DriveWinputWithInterception:
+		return nil
+	default:
+		return fmt.Errorf("unsupported drive %s", GlobalConfig.EnabledDriveName)
+	}
 }
 
-func (e *Engine) EngineRelease() error {
+func (e *Engine) EngineRelease(ctx context.Context, keys ...KeyCodes) error {
 	// TODO
 	return fmt.Errorf("unavailable")
 }

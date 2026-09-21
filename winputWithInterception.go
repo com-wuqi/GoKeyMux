@@ -75,11 +75,9 @@ func WinputWithInterceptionInit() error {
 }
 
 func WinputWithInterceptionPress(key KeyCodes) error {
-	// TODO
-	return fmt.Errorf("unavailable")
+	return winput.KeyDown(key.Winput)
 }
 
 func WinputWithInterceptionRelease(key KeyCodes) error {
-	// TODO
-	return fmt.Errorf("unavailable")
+	return winput.KeyUp(key.Winput)
 }

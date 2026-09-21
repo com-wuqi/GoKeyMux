@@ -27,8 +27,8 @@ func (s *GoKeyMuxService) KeyService(stream pb.RpcKeyService_KeyServiceServer) e
 		// TODO
 		if err == io.EOF {
 			return stream.SendAndClose(&pb.KeyReturn{
-				IsAllDone: false,
-				MetaData:  "Service Unavailable",
+				IsAllDone: false, // TODO: 错误计数器？必须？
+				MetaData:  time.Now().String(),
 			})
 		}
 		if err != nil {
@@ -47,7 +47,7 @@ func (s *GoKeyMuxService) KeyServiceDebug(ctx context.Context, req *pb.KeyInputD
 		return &pb.KeyReturnDebug{
 			IsFinished: false,
 			Key:        req.GetKey(),
-			TimeStamp:  req.GetTimeStamp(),
+			TimeStamp:  time.Now().String(),
 		}, nil
 	}
 }
