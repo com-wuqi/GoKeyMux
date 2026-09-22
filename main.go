@@ -2,6 +2,8 @@ package main
 
 import (
 	"log/slog"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,6 +20,15 @@ func main() {
 		Level: LogLevel2slogLevel(GlobalConfig.LogLevel),
 	}))
 	slog.SetDefault(logger)
+
+	if GlobalConfig.PprofAddress != "" {
+		go func() {
+			slog.Info("pprof listening", "addr", GlobalConfig.PprofAddress)
+			if err := http.ListenAndServe(GlobalConfig.PprofAddress, nil); err != nil {
+				slog.Error("pprof server error", "err", err)
+			}
+		}()
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)

@@ -1,0 +1,80 @@
+	// makc
+	makcInputClient, err := MakcInputInit()
+	if err != nil {
+		slog.Debug("MakcInputInit() failed: %v", err)
+	}
+	defer MakcInputClose(makcInputClient)
+	// winput Message
+	targetWindow, err := WinputInitWithWindow(false, -1)
+	if err != nil {
+		slog.Debug("WinputInitWithWindow() failed: %v", err)
+	}
+	// winput Interception
+	err = WinputWithInterceptionInit()
+	if err != nil {
+		slog.Debug("WinputWithInterceptionInit() failed: %v", err)
+	} // win input
+	// fakerInput
+	fakerInputClient, err := FakerInputInit()
+	if err != nil {
+		slog.Debug("FakerInputInit() failed: %v", err)
+	}
+	defer func(fakerInputClient *FakerInputDevice) {
+		err := fakerInputClient.Close()
+		if err != nil {
+			slog.Debug("FakerInputClient.Close() failed: %v", err)
+		}
+	}(fakerInputClient)
+
+	// keycode
+	codeA, ok := KeyCodesFromRune('a')
+	if !ok {
+		slog.Debug("KeyCodesFromRune('a') failed")
+	}
+	codeB, ok := KeyCodesFromRune('b')
+	if !ok {
+		slog.Debug("KeyCodesFromRune('b') failed")
+	}
+	codeC, ok := KeyCodesFromRune('c')
+	if !ok {
+		slog.Debug("KeyCodesFromRune('c') failed")
+	}
+	codeD, ok := KeyCodesFromRune('d')
+	if !ok {
+		slog.Debug("KeyCodesFromRune('d') failed")
+	}
+
+	// run
+	ctx := context.Background()
+
+	if makcInputClient != nil {
+		if err := makcInputClient.Keyboard.Tap(ctx, codeA.Makc); err != nil {
+			slog.Debug("MakcInputClient.Keyboard.Tap() failed: %v", err)
+		}
+	} else {
+		slog.Debug("MakcInputClient is nil, skip")
+	}
+
+	if err := winput.Press(codeB.Winput); err != nil {
+		slog.Debug("winput.Press() failed: %v", err)
+	}
+
+	if targetWindow != nil {
+		if err := targetWindow.Press(codeC.Winput); err != nil {
+			slog.Debug("targetWindow.Press() failed: %v", err)
+		}
+	} else {
+		slog.Debug("targetWindow is nil, skip")
+	}
+
+	if fakerInputClient != nil {
+		if err := fakerInputClient.Tap(codeD.FakerInput, codeD.Modifiers); err != nil {
+			slog.Debug("FakerInputClient.Tap() failed: %v", err)
+		}
+	} else {
+		slog.Debug("FakerInputClient is nil, skip")
+	}
+
+protoc --go_out=. --go_opt=paths=source_relative proto/gokeymux.proto
+
+protoc --go-grpc_out=. --go-grpc_opt=paths=source_relative proto/gokeymux.proto

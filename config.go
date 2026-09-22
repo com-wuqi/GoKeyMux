@@ -14,6 +14,7 @@ const (
 	DriveWinputWithWindow       = "winputWithWindow"
 	DriveWinputWithInterception = "winputWithInterception"
 	DriveFakerInput             = "fakerInput"
+	DriveNoop                   = "noop"
 )
 
 func (d *DriveName) UnmarshalJSON(data []byte) error {
@@ -23,7 +24,7 @@ func (d *DriveName) UnmarshalJSON(data []byte) error {
 	}
 	driveName := DriveName(s)
 	switch driveName {
-	case DriveMakc, DriveWinputWithWindow, DriveWinputWithInterception, DriveFakerInput:
+	case DriveMakc, DriveWinputWithWindow, DriveWinputWithInterception, DriveFakerInput, DriveNoop:
 		*d = driveName
 		return nil
 	default:
@@ -91,6 +92,8 @@ type Config struct {
 	WinputWindowProcessName            string    `json:"winputWindowProcessName"`            // (winput无Interception驱动) FindByProcessName
 	WinputWindowUseStaticIndex         bool      `json:"winputWindowUseStaticIndex"`         // (winput无Interception驱动) 是否使用固定index
 	WinputWindowIndex                  int       `json:"winputWindowIndex"`                  // (winput无Interception驱动) 窗口index
+	PprofAddress                       string    `json:"pprofAddress"`                       // 可选 pprof 监听地址，空表示关闭
+	NoopLatencyMicros                  int       `json:"noopLatencyMicros"`                  // (noop后端) 每次按键模拟延迟 单位 微秒
 }
 
 var GlobalConfig Config
@@ -112,6 +115,8 @@ func LoadConfig() error {
 			WinputWindowProcessName:            "Game.exe",
 			WinputWindowUseStaticIndex:         true,
 			WinputWindowIndex:                  0,
+			PprofAddress:                       "",
+			NoopLatencyMicros:                  0,
 		}
 		jsonBytes, err := json.MarshalIndent(defaultConfig, "", "  ")
 		if err != nil {

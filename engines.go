@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aiwaki/makc"
 	"github.com/rpdg/winput"
@@ -49,6 +50,10 @@ func (e *Engine) StartEngine() error {
 			}
 			e.driveClient = nil
 		}
+	case DriveNoop:
+		{
+			e.driveClient = NewNoopDevice(time.Duration(GlobalConfig.NoopLatencyMicros) * time.Microsecond)
+		}
 	default:
 		return fmt.Errorf("unsupported drive %s", GlobalConfig.EnabledDriveName)
 	}
@@ -74,6 +79,10 @@ func (e *Engine) CloseEngine() error {
 			return fmt.Errorf("drive is not '*FakerInputDevice'")
 		}
 	case DriveWinputWithWindow, DriveWinputWithInterception:
+		{
+			return nil
+		}
+	case DriveNoop:
 		{
 			return nil
 		}
@@ -132,6 +141,19 @@ func (e *Engine) EnginePress(ctx context.Context, keys ...KeyCodes) error {
 			}
 			return nil
 		}
+	case DriveNoop:
+		{
+			client, ok := e.driveClient.(*NoopDevice)
+			if !ok {
+				return fmt.Errorf("drive is not '*NoopDevice'")
+			}
+			for _, key := range keys {
+				if err := client.Press(key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
 	default:
 		return fmt.Errorf("unsupported drive %s", GlobalConfig.EnabledDriveName)
 	}
@@ -182,6 +204,19 @@ func (e *Engine) EngineRelease(ctx context.Context, keys ...KeyCodes) error {
 		{
 			for _, key := range keys {
 				if err := WinputWithInterceptionRelease(key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	case DriveNoop:
+		{
+			client, ok := e.driveClient.(*NoopDevice)
+			if !ok {
+				return fmt.Errorf("drive is not '*NoopDevice'")
+			}
+			for _, key := range keys {
+				if err := client.Release(key); err != nil {
 					return err
 				}
 			}
