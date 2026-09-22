@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/aiwaki/makc"
 	"github.com/rpdg/winput"
 )
@@ -376,4 +378,106 @@ func FakerInputKeyFromMakc(k makc.Key) (code byte, ok bool) {
 func FakerInputKeyFromWinput(k winput.Key) (code byte, ok bool) {
 	kc, ok := keyByWinput[k]
 	return kc.FakerInput, ok
+}
+
+// keyByName maps canonical, lower-case key names (e.g. "enter", "f1", "left",
+// "ctrl") to their KeyCodes. Modifier keys carry their modifier flag in
+// Modifiers and a zero FakerInput code, because FakerInput encodes modifiers as
+// report flags rather than key codes.
+var keyByName = map[string]KeyCodes{
+	// Whitespace and control keys
+	"enter":     {makc.KeyEnter, winput.KeyEnter, fakerInputKeyEnter, 0},
+	"return":    {makc.KeyEnter, winput.KeyEnter, fakerInputKeyEnter, 0},
+	"escape":    {makc.KeyEscape, winput.KeyEsc, fakerInputKeyEscape, 0},
+	"esc":       {makc.KeyEscape, winput.KeyEsc, fakerInputKeyEscape, 0},
+	"backspace": {makc.KeyBackspace, winput.KeyBkSp, fakerInputKeyBackspace, 0},
+	"tab":       {makc.KeyTab, winput.KeyTab, fakerInputKeyTab, 0},
+	"space":     {makc.KeySpace, winput.KeySpace, fakerInputKeySpace, 0},
+	"capslock":  {makc.KeyCapsLock, winput.KeyCaps, fakerInputKeyCapsLock, 0},
+
+	// Function keys
+	"f1":  {makc.KeyF1, winput.KeyF1, fakerInputKeyF1, 0},
+	"f2":  {makc.KeyF2, winput.KeyF2, fakerInputKeyF2, 0},
+	"f3":  {makc.KeyF3, winput.KeyF3, fakerInputKeyF3, 0},
+	"f4":  {makc.KeyF4, winput.KeyF4, fakerInputKeyF4, 0},
+	"f5":  {makc.KeyF5, winput.KeyF5, fakerInputKeyF5, 0},
+	"f6":  {makc.KeyF6, winput.KeyF6, fakerInputKeyF6, 0},
+	"f7":  {makc.KeyF7, winput.KeyF7, fakerInputKeyF7, 0},
+	"f8":  {makc.KeyF8, winput.KeyF8, fakerInputKeyF8, 0},
+	"f9":  {makc.KeyF9, winput.KeyF9, fakerInputKeyF9, 0},
+	"f10": {makc.KeyF10, winput.KeyF10, fakerInputKeyF10, 0},
+	"f11": {makc.KeyF11, winput.KeyF11, fakerInputKeyF11, 0},
+	"f12": {makc.KeyF12, winput.KeyF12, fakerInputKeyF12, 0},
+
+	// Navigation and editing keys
+	"scrolllock": {makc.KeyScrollLock, winput.KeyScroll, fakerInputKeyScrollLock, 0},
+	"insert":     {makc.KeyInsert, winput.KeyInsert, fakerInputKeyInsert, 0},
+	"ins":        {makc.KeyInsert, winput.KeyInsert, fakerInputKeyInsert, 0},
+	"home":       {makc.KeyHome, winput.KeyHome, fakerInputKeyHome, 0},
+	"pageup":     {makc.KeyPageUp, winput.KeyPageUp, fakerInputKeyPageUp, 0},
+	"pgup":       {makc.KeyPageUp, winput.KeyPageUp, fakerInputKeyPageUp, 0},
+	"delete":     {makc.KeyDelete, winput.KeyDelete, fakerInputKeyDelete, 0},
+	"del":        {makc.KeyDelete, winput.KeyDelete, fakerInputKeyDelete, 0},
+	"end":        {makc.KeyEnd, winput.KeyEnd, fakerInputKeyEnd, 0},
+	"pagedown":   {makc.KeyPageDown, winput.KeyPageDown, fakerInputKeyPageDown, 0},
+	"pgdn":       {makc.KeyPageDown, winput.KeyPageDown, fakerInputKeyPageDown, 0},
+	"right":      {makc.KeyRight, winput.KeyRight, fakerInputKeyRightArrow, 0},
+	"left":       {makc.KeyLeft, winput.KeyLeft, fakerInputKeyLeftArrow, 0},
+	"down":       {makc.KeyDown, winput.KeyArrowDown, fakerInputKeyDownArrow, 0},
+	"up":         {makc.KeyUp, winput.KeyArrowUp, fakerInputKeyUpArrow, 0},
+	"numlock":    {makc.KeyNumLock, winput.KeyNumLock, fakerInputKeyNumLock, 0},
+
+	// Modifier keys. FakerInput has no key code for these; the modifier flag is
+	// carried in Modifiers and the winput code is 0 for keys winput cannot
+	// represent (the Windows/Gui key).
+	"ctrl":       {makc.KeyControl, winput.KeyCtrl, 0, ModLCtrl},
+	"control":    {makc.KeyControl, winput.KeyCtrl, 0, ModLCtrl},
+	"lctrl":      {makc.KeyLeftControl, winput.KeyCtrl, 0, ModLCtrl},
+	"leftctrl":   {makc.KeyLeftControl, winput.KeyCtrl, 0, ModLCtrl},
+	"rctrl":      {makc.KeyRightControl, winput.KeyCtrl, 0, ModRCtrl},
+	"rightctrl":  {makc.KeyRightControl, winput.KeyCtrl, 0, ModRCtrl},
+	"shift":      {makc.KeyShift, winput.KeyShift, 0, ModLShift},
+	"lshift":     {makc.KeyLeftShift, winput.KeyShift, 0, ModLShift},
+	"leftshift":  {makc.KeyLeftShift, winput.KeyShift, 0, ModLShift},
+	"rshift":     {makc.KeyRightShift, winput.KeyShift, 0, ModRShift},
+	"rightshift": {makc.KeyRightShift, winput.KeyShift, 0, ModRShift},
+	"alt":        {makc.KeyAlt, winput.KeyAlt, 0, ModLAlt},
+	"lalt":       {makc.KeyLeftAlt, winput.KeyAlt, 0, ModLAlt},
+	"leftalt":    {makc.KeyLeftAlt, winput.KeyAlt, 0, ModLAlt},
+	"ralt":       {makc.KeyRightAlt, winput.KeyAlt, 0, ModRAlt},
+	"rightalt":   {makc.KeyRightAlt, winput.KeyAlt, 0, ModRAlt},
+	"gui":        {makc.KeyLeftWindows, 0, 0, ModLGui},
+	"win":        {makc.KeyLeftWindows, 0, 0, ModLGui},
+	"windows":    {makc.KeyLeftWindows, 0, 0, ModLGui},
+	"super":      {makc.KeyLeftWindows, 0, 0, ModLGui},
+	"meta":       {makc.KeyLeftWindows, 0, 0, ModLGui},
+}
+
+// KeyCodesFromName resolves a key name (e.g. "enter", "F1", "left", "ctrl")
+// case-insensitively via keyByName.
+func KeyCodesFromName(name string) (KeyCodes, bool) {
+	if name == "" {
+		return KeyCodes{}, false
+	}
+	kc, ok := keyByName[strings.ToLower(name)]
+	return kc, ok
+}
+
+// KeyCodesFromRunes resolves a rune string into an ordered slice of KeyCodes,
+// one per rune. Every rune must be mappable; an empty string or any unknown
+// rune yields ok=false. Multiple runes represent a simultaneous chord.
+func KeyCodesFromRunes(s string) ([]KeyCodes, bool) {
+	if s == "" {
+		return nil, false
+	}
+	runes := []rune(s)
+	keys := make([]KeyCodes, 0, len(runes))
+	for _, r := range runes {
+		kc, ok := KeyCodesFromRune(r)
+		if !ok {
+			return nil, false
+		}
+		keys = append(keys, kc)
+	}
+	return keys, true
 }

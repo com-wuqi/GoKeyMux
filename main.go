@@ -21,8 +21,24 @@ func main() {
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	engine := NewEngine()
+	err = engine.StartEngine()
+	if err != nil {
+		slog.Error("Error starting engine", "err", err)
+		return
+	}
+	slog.Info("engine started")
+	defer func(engine *Engine) {
+		err := engine.CloseEngine()
+		if err != nil {
+			slog.Error("Error closing engine", "err", err)
+		}
+		slog.Info("engine closed")
+	}(engine)
+
 	slog.Info("server starting")
-	server, serverErrCh, err := StartService()
+	server, serverErrCh, err := StartService(engine)
 	if err != nil {
 		slog.Error("Error starting service", "err", err)
 		return
@@ -42,22 +58,6 @@ func main() {
 			slog.Warn("Error stopping service", "err", err)
 		}
 	}()
-
-	engine := NewEngine()
-	err = engine.StartEngine()
-	slog.Info("engine starting")
-	if err != nil {
-		slog.Error("Error starting engine", "err", err)
-		return
-	}
-	slog.Info("engine started")
-	defer func(engine *Engine) {
-		err := engine.CloseEngine()
-		if err != nil {
-			slog.Error("Error closing engine", "err", err)
-		}
-		slog.Info("engine closed")
-	}(engine)
 
 	<-sigCh
 }

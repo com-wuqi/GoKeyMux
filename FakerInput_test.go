@@ -386,3 +386,130 @@ func TestFakerInputKeyDelegates(t *testing.T) {
 		t.Errorf("FakerInputKeyFromWinput(Esc) = (%#x, %v), want (%#x, true)", code, ok, fakerInputKeyEscape)
 	}
 }
+
+// TestKeyCodesFromName verifies case-insensitive key-name resolution,
+// including standalone modifier keys.
+func TestKeyCodesFromName(t *testing.T) {
+	cases := []struct {
+		in   string
+		want KeyCodes
+		ok   bool
+	}{
+		{"enter", KeyCodes{makc.KeyEnter, winput.KeyEnter, fakerInputKeyEnter, 0}, true},
+		{"ENTER", KeyCodes{makc.KeyEnter, winput.KeyEnter, fakerInputKeyEnter, 0}, true},
+		{"f1", KeyCodes{makc.KeyF1, winput.KeyF1, fakerInputKeyF1, 0}, true},
+		{"F1", KeyCodes{makc.KeyF1, winput.KeyF1, fakerInputKeyF1, 0}, true},
+		{"left", KeyCodes{makc.KeyLeft, winput.KeyLeft, fakerInputKeyLeftArrow, 0}, true},
+		{"ctrl", KeyCodes{makc.KeyControl, winput.KeyCtrl, 0, ModLCtrl}, true},
+		{"rctrl", KeyCodes{makc.KeyRightControl, winput.KeyCtrl, 0, ModRCtrl}, true},
+		{"shift", KeyCodes{makc.KeyShift, winput.KeyShift, 0, ModLShift}, true},
+		{"alt", KeyCodes{makc.KeyAlt, winput.KeyAlt, 0, ModLAlt}, true},
+		{"gui", KeyCodes{makc.KeyLeftWindows, 0, 0, ModLGui}, true},
+		{"", KeyCodes{}, false},
+		{"xyz", KeyCodes{}, false},
+		{"a", KeyCodes{}, false}, // single runes are not names
+	}
+	for _, c := range cases {
+		got, ok := KeyCodesFromName(c.in)
+		if ok != c.ok || got != c.want {
+			t.Errorf("KeyCodesFromName(%q) = (%+v, %v), want (%+v, %v)", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+// TestKeyCodesFromRunes verifies rune-string resolution, including multi-rune
+// chords and error cases.
+func TestKeyCodesFromRunes(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []KeyCodes
+		ok   bool
+	}{
+		{"a", []KeyCodes{{makc.KeyA, winput.KeyA, fakerInputKeyA, 0}}, true},
+		{"A", []KeyCodes{{makc.KeyA, winput.KeyA, fakerInputKeyA, ModLShift}}, true},
+		{"ab", []KeyCodes{
+			{makc.KeyA, winput.KeyA, fakerInputKeyA, 0},
+			{makc.KeyB, winput.KeyB, fakerInputKeyB, 0},
+		}, true},
+		{"AB", []KeyCodes{
+			{makc.KeyA, winput.KeyA, fakerInputKeyA, ModLShift},
+			{makc.KeyB, winput.KeyB, fakerInputKeyB, ModLShift},
+		}, true},
+		{"1!", []KeyCodes{
+			{makc.Key1, winput.Key1, fakerInputKey1, 0},
+			{makc.Key1, winput.Key1, fakerInputKey1, ModLShift},
+		}, true},
+		{"", nil, false},
+		{"é", nil, false},
+		{"aé", nil, false},
+	}
+	for _, c := range cases {
+		got, ok := KeyCodesFromRunes(c.in)
+		if ok != c.ok {
+			t.Errorf("KeyCodesFromRunes(%q) ok = %v, want %v", c.in, ok, c.ok)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		if len(got) != len(c.want) {
+			t.Errorf("KeyCodesFromRunes(%q) len = %d, want %d", c.in, len(got), len(c.want))
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("KeyCodesFromRunes(%q)[%d] = %+v, want %+v", c.in, i, got[i], c.want[i])
+			}
+		}
+	}
+}
+
+// TestStandaloneModifier verifies that modifier-only presses/releases are
+// tracked independently of held keys and survive key press/release around them.
+func TestStandaloneModifier(t *testing.T) {
+	d := &FakerInputDevice{}
+
+	d.keyDownLocked(0, ModLCtrl)
+	mods, _ := d.heldState()
+	if mods&ModLCtrl == 0 {
+		t.Fatalf("ctrl not held: mods=%#x", mods)
+	}
+
+	d.keyDownLocked(fakerInputKeyA, 0)
+	mods, keys := d.heldState()
+	if mods&ModLCtrl == 0 {
+		t.Fatalf("ctrl lost after pressing a key: mods=%#x", mods)
+	}
+	if !containsKey(keys, fakerInputKeyA) {
+		t.Fatalf("key a not held: %v", keys)
+	}
+
+	d.keyUpLocked(fakerInputKeyA, 0)
+	mods, _ = d.heldState()
+	if mods&ModLCtrl == 0 {
+		t.Fatalf("ctrl lost after releasing a key: mods=%#x", mods)
+	}
+
+	d.keyUpLocked(0, ModLCtrl)
+	mods, _ = d.heldState()
+	if mods != 0 {
+		t.Fatalf("mods = %#x, want 0", mods)
+	}
+}
+
+// TestReleaseAllClearsStandaloneModifiers verifies ReleaseAll clears held
+// modifier-only state as well as held keys.
+func TestReleaseAllClearsStandaloneModifiers(t *testing.T) {
+	d := &FakerInputDevice{}
+	d.keyDownLocked(0, ModLAlt)
+	d.keyDownLocked(fakerInputKeyA, 0)
+	d.releaseAllLocked()
+
+	if d.keyCount != 0 {
+		t.Fatalf("keyCount = %d, want 0", d.keyCount)
+	}
+	mods, _ := d.heldState()
+	if mods != 0 {
+		t.Fatalf("mods = %#x, want 0", mods)
+	}
+}

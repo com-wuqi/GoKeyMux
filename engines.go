@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/aiwaki/makc"
+	"github.com/rpdg/winput"
 )
 
 type Engine struct {
@@ -43,6 +44,9 @@ func (e *Engine) StartEngine() error {
 		}
 	case DriveWinputWithInterception:
 		{
+			if err := WinputWithInterceptionInit(); err != nil {
+				return err
+			}
 			e.driveClient = nil
 		}
 	default:
@@ -79,30 +83,111 @@ func (e *Engine) CloseEngine() error {
 }
 
 func (e *Engine) EnginePress(ctx context.Context, keys ...KeyCodes) error {
-	// TODO
 	switch GlobalConfig.EnabledDriveName {
 	case DriveMakc:
 		{
-			if client, ok := e.driveClient.(*makc.Client); ok {
-				for _, key := range keys {
-					if err := MakcInputPress(client, key, ctx); err != nil {
-						return err
-					}
-				}
-				return nil
+			client, ok := e.driveClient.(*makc.Client)
+			if !ok {
+				return fmt.Errorf("drive is not '*makc.Client'")
 			}
-			return fmt.Errorf("drive is not ‘*make.Client’")
+			for _, key := range keys {
+				if err := MakcInputPress(client, key, ctx); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 	case DriveFakerInput:
-		return nil
-	case DriveWinputWithWindow, DriveWinputWithInterception:
-		return nil
+		{
+			client, ok := e.driveClient.(*FakerInputDevice)
+			if !ok {
+				return fmt.Errorf("drive is not '*FakerInputDevice'")
+			}
+			for _, key := range keys {
+				if err := client.KeyDown(key.FakerInput, key.Modifiers); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	case DriveWinputWithWindow:
+		{
+			target, ok := e.driveClient.(*winput.Window)
+			if !ok {
+				return fmt.Errorf("drive is not '*winput.Window'")
+			}
+			for _, key := range keys {
+				if err := WinputWithWindowPress(target, key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	case DriveWinputWithInterception:
+		{
+			for _, key := range keys {
+				if err := WinputWithInterceptionPress(key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
 	default:
 		return fmt.Errorf("unsupported drive %s", GlobalConfig.EnabledDriveName)
 	}
 }
 
 func (e *Engine) EngineRelease(ctx context.Context, keys ...KeyCodes) error {
-	// TODO
-	return fmt.Errorf("unavailable")
+	switch GlobalConfig.EnabledDriveName {
+	case DriveMakc:
+		{
+			client, ok := e.driveClient.(*makc.Client)
+			if !ok {
+				return fmt.Errorf("drive is not '*makc.Client'")
+			}
+			for _, key := range keys {
+				if err := MakcInputRelease(client, key, ctx); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	case DriveFakerInput:
+		{
+			client, ok := e.driveClient.(*FakerInputDevice)
+			if !ok {
+				return fmt.Errorf("drive is not '*FakerInputDevice'")
+			}
+			for _, key := range keys {
+				if err := client.KeyUp(key.FakerInput, key.Modifiers); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	case DriveWinputWithWindow:
+		{
+			target, ok := e.driveClient.(*winput.Window)
+			if !ok {
+				return fmt.Errorf("drive is not '*winput.Window'")
+			}
+			for _, key := range keys {
+				if err := WinputWithWindowRelease(target, key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	case DriveWinputWithInterception:
+		{
+			for _, key := range keys {
+				if err := WinputWithInterceptionRelease(key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	default:
+		return fmt.Errorf("unsupported drive %s", GlobalConfig.EnabledDriveName)
+	}
 }

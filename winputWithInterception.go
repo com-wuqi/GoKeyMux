@@ -75,9 +75,15 @@ func WinputWithInterceptionInit() error {
 }
 
 func WinputWithInterceptionPress(key KeyCodes) error {
+	if key.Winput == 0 {
+		return fmt.Errorf("key not supported by winput backend")
+	}
 	return winput.KeyDown(key.Winput)
 }
 
 func WinputWithInterceptionRelease(key KeyCodes) error {
+	if key.Winput == 0 {
+		return fmt.Errorf("key not supported by winput backend")
+	}
 	return winput.KeyUp(key.Winput)
 }

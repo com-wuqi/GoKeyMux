@@ -211,7 +211,7 @@ func (x *KeyInputDebug) GetMetaData() string {
 
 type KeyReturnDebug struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	IsFinished    bool                   `protobuf:"varint,1,opt,name=is_finished,json=isFinished,proto3" json:"is_finished,omitempty"`
+	IsFinished    bool                   `protobuf:"varint,1,opt,name=isFinished,proto3" json:"isFinished,omitempty"`
 	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
 	TimeStamp     string                 `protobuf:"bytes,3,opt,name=timeStamp,proto3" json:"timeStamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -286,9 +286,10 @@ const file_proto_gokeymux_proto_rawDesc = "" +
 	"\x06isRune\x18\x02 \x01(\bR\x06isRune\x12\x1c\n" +
 	"\tisPressed\x18\x03 \x01(\bR\tisPressed\x12\x1c\n" +
 	"\ttimeStamp\x18\x04 \x01(\tR\ttimeStamp\x12\x1a\n" +
-	"\bmetaData\x18\x05 \x01(\tR\bmetaData\"a\n" +
-	"\x0ekeyReturnDebug\x12\x1f\n" +
-	"\vis_finished\x18\x01 \x01(\bR\n" +
+	"\bmetaData\x18\x05 \x01(\tR\bmetaData\"`\n" +
+	"\x0ekeyReturnDebug\x12\x1e\n" +
+	"\n" +
+	"isFinished\x18\x01 \x01(\bR\n" +
 	"isFinished\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x1c\n" +
 	"\ttimeStamp\x18\x03 \x01(\tR\ttimeStamp2\x8e\x01\n" +

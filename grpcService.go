@@ -4,6 +4,7 @@ import (
 	pb "GoKeyMux/proto"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -19,37 +20,78 @@ import (
 
 type GoKeyMuxService struct {
 	pb.UnimplementedRpcKeyServiceServer
+	engine *Engine
+}
+
+func NewGoKeyMuxService(engine *Engine) *GoKeyMuxService {
+	return &GoKeyMuxService{engine: engine}
 }
 
 func (s *GoKeyMuxService) KeyService(stream pb.RpcKeyService_KeyServiceServer) error {
+	var errCount int
 	for {
 		req, err := stream.Recv()
-		// TODO
 		if err == io.EOF {
 			return stream.SendAndClose(&pb.KeyReturn{
-				IsAllDone: false, // TODO: 错误计数器？必须？
+				IsAllDone: errCount == 0,
 				MetaData:  time.Now().String(),
 			})
 		}
 		if err != nil {
 			return err
 		}
-		slog.Debug("Received key request", "key", req.GetKey(), "isPressed", req.GetIsPressed(), "isRune", req.GetIsRune())
+		if err := s.dispatch(stream.Context(), req.GetKey(), req.GetIsRune(), req.GetIsPressed()); err != nil {
+			errCount++
+			slog.Warn("key dispatch failed", "key", req.GetKey(), "isRune", req.GetIsRune(), "isPressed", req.GetIsPressed(), "err", err)
+			continue
+		}
+		if slog.Default().Enabled(stream.Context(), slog.LevelDebug) {
+			slog.Debug("Received key request", "key", req.GetKey(), "isPressed", req.GetIsPressed(), "isRune", req.GetIsRune())
+		}
 	}
 }
 
 func (s *GoKeyMuxService) KeyServiceDebug(ctx context.Context, req *pb.KeyInputDebug) (*pb.KeyReturnDebug, error) {
-	// TODO
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
-		return &pb.KeyReturnDebug{
-			IsFinished: false,
-			Key:        req.GetKey(),
-			TimeStamp:  time.Now().String(),
-		}, nil
 	}
+	if err := s.dispatch(ctx, req.GetKey(), req.GetIsRune(), req.GetIsPressed()); err != nil {
+		return nil, status.Errorf(codes.Internal, "dispatch failed: %v", err)
+	}
+	return &pb.KeyReturnDebug{
+		IsFinished: true,
+		Key:        req.GetKey(),
+		TimeStamp:  time.Now().Format(time.RFC3339Nano),
+	}, nil
+}
+
+// dispatch resolves a key spec and presses or releases it on the engine. When
+// isRune is true the key is parsed as a rune string (multiple runes form a
+// simultaneous chord); otherwise it is looked up as a key name.
+func (s *GoKeyMuxService) dispatch(ctx context.Context, key string, isRune bool, isPressed bool) error {
+	if s.engine == nil {
+		return errors.New("engine is not initialized")
+	}
+	var keys []KeyCodes
+	if isRune {
+		var ok bool
+		keys, ok = KeyCodesFromRunes(key)
+		if !ok {
+			return fmt.Errorf("unknown rune sequence %q", key)
+		}
+	} else {
+		kc, ok := KeyCodesFromName(key)
+		if !ok {
+			return fmt.Errorf("unknown key %q", key)
+		}
+		keys = []KeyCodes{kc}
+	}
+	if isPressed {
+		return s.engine.EnginePress(ctx, keys...)
+	}
+	return s.engine.EngineRelease(ctx, keys...)
 }
 
 // logLevelForCode maps a gRPC status code to the slog level used for the
@@ -97,7 +139,7 @@ func StreamServerLogging(srv any, ss grpc.ServerStream, info *grpc.StreamServerI
 	return err
 }
 
-func StartService() (*grpc.Server, <-chan error, error) {
+func StartService(engine *Engine) (*grpc.Server, <-chan error, error) {
 	ln, err := net.Listen("tcp4", GlobalConfig.GRPCAddress)
 	if err != nil {
 		return nil, nil, err
@@ -118,7 +160,7 @@ func StartService() (*grpc.Server, <-chan error, error) {
 		grpc.UnaryInterceptor(UnaryServerLogging),
 		grpc.StreamInterceptor(StreamServerLogging),
 	)
-	pb.RegisterRpcKeyServiceServer(server, &GoKeyMuxService{})
+	pb.RegisterRpcKeyServiceServer(server, NewGoKeyMuxService(engine))
 	healthpb.RegisterHealthServer(server, hs)
 	serveErr := make(chan error, 1)
 	go func() {

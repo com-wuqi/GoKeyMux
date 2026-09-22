@@ -9,7 +9,7 @@ import (
 )
 
 func MakcInputInit() (*makc.Client, error) {
-	slog.Debug("FakerInputInit")
+	slog.Debug("MakcInputInit")
 	client, err := makc.Open()
 	if err != nil {
 		return nil, err
@@ -19,7 +19,7 @@ func MakcInputInit() (*makc.Client, error) {
 
 func MakcInputPress(client *makc.Client, key KeyCodes, ctx context.Context) error {
 	if client == nil {
-		slog.Error("FakerInputPress failed: client is nil")
+		slog.Error("MakcInputPress failed: client is nil")
 		return fmt.Errorf("makc client is nil")
 	}
 	return client.Keyboard.Press(ctx, key.Makc)
@@ -27,7 +27,7 @@ func MakcInputPress(client *makc.Client, key KeyCodes, ctx context.Context) erro
 
 func MakcInputRelease(client *makc.Client, key KeyCodes, ctx context.Context) error {
 	if client == nil {
-		slog.Error("FakerInputRelease failed: client is nil")
+		slog.Error("MakcInputRelease failed: client is nil")
 		return fmt.Errorf("makc client is nil")
 	}
 	return client.Keyboard.Release(ctx, key.Makc)

@@ -77,6 +77,11 @@ type FakerInputDevice struct {
 	keyMods  [fakerInputKeyCodeCount]byte
 	keyCount int
 
+	// heldMods accumulates standalone modifier presses (e.g. holding Ctrl)
+	// that are not attached to any specific key. It is OR'd on top of the
+	// per-key modifiers when building a report.
+	heldMods byte
+
 	// reportBuf is a reusable control report buffer. It is only touched while
 	// mu is held, so it needs no further synchronization and avoids a heap
 	// allocation on every key event.
@@ -264,34 +269,38 @@ func (d *FakerInputDevice) TypeText(s string) error {
 }
 
 func (d *FakerInputDevice) keyDownLocked(code byte, modifiers byte) error {
-	if code != 0 {
-		for i := 0; i < d.keyCount; i++ {
-			if d.keys[i] == code {
-				d.keyMods[i] |= modifiers
-				return d.sendHeldLocked()
-			}
+	if code == 0 {
+		d.heldMods |= modifiers
+		return d.sendHeldLocked()
+	}
+	for i := 0; i < d.keyCount; i++ {
+		if d.keys[i] == code {
+			d.keyMods[i] |= modifiers
+			return d.sendHeldLocked()
 		}
-		if d.keyCount < fakerInputKeyCodeCount {
-			d.keys[d.keyCount] = code
-			d.keyMods[d.keyCount] = modifiers
-			d.keyCount++
-		}
+	}
+	if d.keyCount < fakerInputKeyCodeCount {
+		d.keys[d.keyCount] = code
+		d.keyMods[d.keyCount] = modifiers
+		d.keyCount++
 	}
 	return d.sendHeldLocked()
 }
 
 func (d *FakerInputDevice) keyUpLocked(code byte, modifiers byte) error {
-	if code != 0 {
-		for i := 0; i < d.keyCount; i++ {
-			if d.keys[i] == code {
-				d.keyMods[i] &^= modifiers
-				if d.keyMods[i] == 0 {
-					d.keyCount--
-					d.keys[i] = d.keys[d.keyCount]
-					d.keyMods[i] = d.keyMods[d.keyCount]
-				}
-				break
+	if code == 0 {
+		d.heldMods &^= modifiers
+		return d.sendHeldLocked()
+	}
+	for i := 0; i < d.keyCount; i++ {
+		if d.keys[i] == code {
+			d.keyMods[i] &^= modifiers
+			if d.keyMods[i] == 0 {
+				d.keyCount--
+				d.keys[i] = d.keys[d.keyCount]
+				d.keyMods[i] = d.keyMods[d.keyCount]
 			}
+			break
 		}
 	}
 	return d.sendHeldLocked()
@@ -314,7 +323,9 @@ func (d *FakerInputDevice) setKeysLocked(codes []byte, modifiers byte) error {
 }
 
 func (d *FakerInputDevice) releaseAllLocked() error {
-	return d.setKeysLocked(nil, 0)
+	d.keyCount = 0
+	d.heldMods = 0
+	return d.sendHeldLocked()
 }
 
 func (d *FakerInputDevice) tapLocked(code byte, modifiers byte) error {
@@ -328,6 +339,7 @@ func (d *FakerInputDevice) tapLocked(code byte, modifiers byte) error {
 // modifier masks, and the ordered held key codes (trailing slots zeroed).
 func (d *FakerInputDevice) heldState() (mods byte, keys [fakerInputKeyCodeCount]byte) {
 	copy(keys[:], d.keys[:d.keyCount])
+	mods = d.heldMods
 	for i := 0; i < d.keyCount; i++ {
 		mods |= d.keyMods[i]
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/rpdg/winput"
@@ -9,7 +10,7 @@ import (
 
 func WinputInitWithWindow() (*winput.Window, error) {
 	slog.Debug("WinputInitWithWindow")
-	windows, err := winput.FindByProcessName("notepad.exe")
+	windows, err := winput.FindByProcessName(GlobalConfig.WinputWindowProcessName)
 	if err != nil {
 		slog.Debug("Find By Process Name Error")
 		return nil, err
@@ -38,9 +39,15 @@ func WinputInitWithWindow() (*winput.Window, error) {
 }
 
 func WinputWithWindowPress(target *winput.Window, key KeyCodes) error {
+	if key.Winput == 0 {
+		return fmt.Errorf("key not supported by winput backend")
+	}
 	return target.KeyDown(key.Winput)
 }
 
 func WinputWithWindowRelease(target *winput.Window, key KeyCodes) error {
+	if key.Winput == 0 {
+		return fmt.Errorf("key not supported by winput backend")
+	}
 	return target.KeyUp(key.Winput)
 }
