@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: |
+          go build -trimpath -ldflags "-s -w" -o dist/GoKeyMux.exe .
+          go build -trimpath -ldflags "-s -w" -o dist/keycycle.exe ./cmd/keycycle
+          go build -trimpath -ldflags "-s -w" -o dist/loadtest.exe ./cmd/loadtest
+
+      - name: Bundle runtime deps
+        run: |
+          Copy-Item -Recurse Interception dist/
+          Copy-Item -Recurse proto dist/
+          Copy-Item FakerInput_Setup_0.1.1_x64.msi dist/
+
+      - name: Zip
+        run: Compress-Archive -Path dist\* -DestinationPath GoKeyMux-windows-amd64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GoKeyMux-windows-amd64
+          path: GoKeyMux-windows-amd64.zip
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: GoKeyMux-windows-amd64.zip
+          generate_release_notes: true
