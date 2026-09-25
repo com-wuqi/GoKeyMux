@@ -188,7 +188,7 @@ go test -tags integration ./...
 
 ### CI（`.github/workflows/ci.yml`）
 
-`push` / `pull_request` 到 `main` 时触发，执行 `go vet` + `go test` + 三个二进制的 `go build`，用于每次合并前的快速校验。
+`push` / `pull_request` 到 `master` 时触发，执行 `go vet` + `go test` + 三个二进制的 `go build`，用于每次合并前的快速校验。
 
 ### 发布（`.github/workflows/release.yml`）
 
@@ -197,20 +197,34 @@ go test -tags integration ./...
 | 推送 `v*` tag            | 构建 → 打包 zip → 自动创建 GitHub Release 并附带 zip（自动生成 release notes） |
 | 手动 `workflow_dispatch` | 构建 → 打包 zip → 仅上传 artifact，不创建 Release                              |
 
-发布产物 `GoKeyMux-windows-amd64.zip` 为扁平结构（解压后 exe 与 `Interception/`、`proto/` 同级，可直接运行）：
+同时构建 **x64（amd64）** 与 **x86（386）** 两个平台，各产出一个 zip：
+
+- `GoKeyMux-windows-amd64.zip`
+- `GoKeyMux-windows-386.zip`
+
+每个 zip 均为扁平结构（解压后 exe 与 `Interception/`、`proto/` 同级，可直接运行）：
 
 ```
 GoKeyMux-windows-amd64.zip
 ├── GoKeyMux.exe
 ├── keycycle.exe
 ├── loadtest.exe
-├── FakerInput_Setup_0.1.1_x64.msi
+├── FakerInput_Setup_0.1.1_x64.msi   # 仅 amd64 包
+├── Interception/      # 运行时驱动库与许可证
+└── proto/             # gRPC 协议定义（供其他语言生成客户端桩）
+
+GoKeyMux-windows-386.zip
+├── GoKeyMux.exe
+├── keycycle.exe
+├── loadtest.exe
 ├── Interception/      # 运行时驱动库与许可证
 └── proto/             # gRPC 协议定义（供其他语言生成客户端桩）
 ```
 
-> 提示：`GoKeyMux.exe` 与 `Interception/` 同级，是为了让 `winputWithInterception` 后端按可执行文件目录定位
-> `Interception/library/x64/interception.dll`，解压后无需移动文件即可运行。
+> 提示：
+> - `GoKeyMux.exe` 与 `Interception/` 同级，是为了让 `winputWithInterception` 后端按可执行文件目录定位
+>   `Interception/library/x64/interception.dll`（386 版对应 `x86/`），解压后无需移动文件即可运行。
+> - `FakerInput_Setup_0.1.1_x64.msi` 为 x64 驱动，仅随 amd64 包分发。
 
 ## 项目结构
 

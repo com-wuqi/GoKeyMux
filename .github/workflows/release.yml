@@ -8,10 +8,14 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
-  release:
+  build:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [ amd64, 386 ]
     steps:
       - uses: actions/checkout@v4
 
@@ -21,6 +25,9 @@ jobs:
           cache: true
 
       - name: Build
+        env:
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: '0'
         run: |
           go build -trimpath -ldflags "-s -w" -o dist/GoKeyMux.exe .
           go build -trimpath -ldflags "-s -w" -o dist/keycycle.exe ./cmd/keycycle
@@ -30,20 +37,30 @@ jobs:
         run: |
           Copy-Item -Recurse Interception dist/
           Copy-Item -Recurse proto dist/
-          Copy-Item FakerInput_Setup_0.1.1_x64.msi dist/
+          if ('${{ matrix.arch }}' -eq 'amd64') { Copy-Item FakerInput_Setup_0.1.1_x64.msi dist/ }
 
       - name: Zip
-        run: Compress-Archive -Path dist\* -DestinationPath GoKeyMux-windows-amd64.zip
+        run: Compress-Archive -Path dist\* -DestinationPath GoKeyMux-windows-${{ matrix.arch }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GoKeyMux-windows-amd64
-          path: GoKeyMux-windows-amd64.zip
+          name: GoKeyMux-windows-${{ matrix.arch }}
+          path: GoKeyMux-windows-${{ matrix.arch }}.zip
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: artifacts
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: GoKeyMux-windows-amd64.zip
+          files: artifacts/*.zip
           generate_release_notes: true
