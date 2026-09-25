@@ -12,7 +12,6 @@ import (
 	"os"
 	"runtime/pprof"
 	"slices"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
