@@ -20,11 +20,21 @@ var (
 	procGetNativeSystemInfo = kernel32.NewProc("GetNativeSystemInfo")
 )
 
+// systemInfo mirrors the Win32 SYSTEM_INFO structure. All fields must be
+// present because GetNativeSystemInfo writes the entire structure; omitting
+// fields would overflow the buffer.
 type systemInfo struct {
-	ProcessorArchitecture uint16
-	Reserved              uint16
-	PageSize              uint32
-	// ... 其他字段省略
+	ProcessorArchitecture     uint16
+	Reserved                  uint16
+	PageSize                  uint32
+	MinimumApplicationAddress uintptr
+	MaximumApplicationAddress uintptr
+	ActiveProcessorMask       uintptr
+	NumberOfProcessors        uint32
+	ProcessorType             uint32
+	AllocationGranularity     uint32
+	ProcessorLevel            uint16
+	ProcessorRevision         uint16
 }
 
 func GetNativeSystemInfo() uint16 {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"sync/atomic"
 	"time"
 )
@@ -19,21 +20,36 @@ func NewNoopDevice(latency time.Duration) *NoopDevice {
 	return &NoopDevice{latency: latency}
 }
 
-func (d *NoopDevice) Press(KeyCodes) error {
-	d.applyLatency()
+func (d *NoopDevice) Press(ctx context.Context, _ KeyCodes) error {
+	if err := d.applyLatency(ctx); err != nil {
+		return err
+	}
 	d.pressCount.Add(1)
 	return nil
 }
 
-func (d *NoopDevice) Release(KeyCodes) error {
-	d.applyLatency()
+func (d *NoopDevice) Release(ctx context.Context, _ KeyCodes) error {
+	if err := d.applyLatency(ctx); err != nil {
+		return err
+	}
 	d.releaseCount.Add(1)
 	return nil
 }
 
-func (d *NoopDevice) applyLatency() {
-	if d.latency > 0 {
-		time.Sleep(d.latency)
+// applyLatency simulates per-event driver cost. It honors ctx cancellation so
+// an aborted request stops waiting instead of blocking on an uninterruptible
+// sleep.
+func (d *NoopDevice) applyLatency(ctx context.Context) error {
+	if d.latency <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(d.latency)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
