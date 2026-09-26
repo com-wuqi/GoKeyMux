@@ -1,6 +1,7 @@
 package main
 
 import (
+	"GoKeyMux/version"
 	"log/slog"
 	"net/http"
 	_ "net/http/pprof"
@@ -11,6 +12,9 @@ import (
 )
 
 func main() {
+	v, commit, buildTime := version.Info()
+	slog.Info("GoKeyMux build info", "version", v, "commit", commit, "buildTime", buildTime)
+
 	err := LoadConfig()
 	if err != nil {
 		slog.Error("Error loading config", "err", err)

@@ -59,6 +59,26 @@ go build -o loadtest.exe ./cmd/loadtest
 > - `winputWithInterception` 后端按可执行文件所在目录定位 `Interception/library/...` 下的 DLL；在仓库根目录直接构建运行即可，无需移动
     `Interception` 目录。
 
+### 构建时注入版本信息
+
+`GoKeyMux.exe` 支持在构建时通过 `-ldflags` 注入版本号（git tag）、打包时间（UTC）与提交哈希，并在启动日志中打印。推荐使用仓库根目录的构建脚本：
+
+```powershell
+.\build.ps1
+```
+
+脚本会自动计算并注入：
+
+- `Version`：`git describe --tags --always --dirty`（如 `v0.1.0`、`v0.1.0-2-g6262409`）
+- `Commit`：`git rev-parse --short HEAD`
+- `BuildTime`：UTC 时间戳（`yyyy-MM-ddTHH:mm:ssZ`）
+
+手动构建也可自行拼接 `-ldflags`（注入目标见 `version/version.go` 顶部注释）。未注入时，提交哈希与提交时间会自动回退到 Go
+工具链内嵌的 VCS 信息（版本号显示为 `dev`）。
+
+在 GoLand 中可在 Run/Debug Configurations → `go build GoKeyMux` → Go tool arguments 里配置，例如
+`-ldflags "-X GoKeyMux/version.Version=dev"`。
+
 ## 配置
 
 首次运行（或删除 `config.json` 后运行）会自动生成默认配置。字段如下：

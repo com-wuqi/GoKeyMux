@@ -25,6 +25,10 @@ jobs:
 
       - name: Build
         run: |
-          go build -o build/GoKeyMux.exe .
+          $Commit = git rev-parse --short HEAD 2>$null
+          if ($LASTEXITCODE -ne 0 -or -not $Commit) { $Commit = $env:GITHUB_SHA }
+          $BuildTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $LdFlags = "-X GoKeyMux/version.Version=dev -X GoKeyMux/version.Commit=$Commit -X GoKeyMux/version.BuildTime=$BuildTime"
+          go build -ldflags $LdFlags -o build/GoKeyMux.exe .
           go build -o build/keycycle.exe ./cmd/keycycle
           go build -o build/loadtest.exe ./cmd/loadtest

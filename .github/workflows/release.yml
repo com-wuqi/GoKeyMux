@@ -18,6 +18,8 @@ jobs:
         arch: [ amd64, 386 ]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
@@ -29,7 +31,13 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: '0'
         run: |
-          go build -trimpath -ldflags "-s -w" -o dist/GoKeyMux.exe .
+          $Version = git describe --tags --always --dirty 2>$null
+          if ($LASTEXITCODE -ne 0 -or -not $Version) { $Version = 'dev' }
+          $Commit = git rev-parse --short HEAD 2>$null
+          if ($LASTEXITCODE -ne 0 -or -not $Commit) { $Commit = 'unknown' }
+          $BuildTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $LdFlags = "-s -w -X GoKeyMux/version.Version=$Version -X GoKeyMux/version.Commit=$Commit -X GoKeyMux/version.BuildTime=$BuildTime"
+          go build -trimpath -ldflags $LdFlags -o dist/GoKeyMux.exe .
           go build -trimpath -ldflags "-s -w" -o dist/keycycle.exe ./cmd/keycycle
           go build -trimpath -ldflags "-s -w" -o dist/loadtest.exe ./cmd/loadtest
 
