@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -42,22 +43,38 @@ func (s *GoKeyMuxService) KeyService(stream pb.RpcKeyService_KeyServiceServer) e
 		}
 		if err := s.dispatch(stream.Context(), req.GetKey(), req.GetIsRune(), req.GetIsPressed()); err != nil {
 			errCount++
-			slog.Warn("key dispatch failed", "key", req.GetKey(), "isRune", req.GetIsRune(), "isPressed", req.GetIsPressed(), "err", err)
+			slog.Default().LogAttrs(stream.Context(), slog.LevelWarn, "key dispatch failed",
+				slog.String("key", req.GetKey()),
+				slog.Bool("isRune", req.GetIsRune()),
+				slog.Bool("isPressed", req.GetIsPressed()),
+				slog.Any("err", err),
+			)
 			continue
 		}
 		if slog.Default().Enabled(stream.Context(), slog.LevelDebug) {
-			slog.Debug("Received key request", "key", req.GetKey(), "isPressed", req.GetIsPressed(), "isRune", req.GetIsRune())
+			slog.Default().LogAttrs(stream.Context(), slog.LevelDebug, "Received key request",
+				slog.String("key", req.GetKey()),
+				slog.Bool("isPressed", req.GetIsPressed()),
+				slog.Bool("isRune", req.GetIsRune()),
+			)
 		}
 	}
 }
 
 func (s *GoKeyMuxService) KeyServiceDebug(ctx context.Context, req *pb.KeyInputDebug) (*pb.KeyReturnDebug, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		slog.Default().LogAttrs(ctx, slog.LevelDebug, "keyInputDebug",
+			slog.String("ClientTimeStamp", req.GetTimeStamp()),
+			slog.String("ClientMetaData", req.GetMetaData()),
+		)
 	}
 	if err := s.dispatch(ctx, req.GetKey(), req.GetIsRune(), req.GetIsPressed()); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, status.FromContextError(err).Err()
+		}
 		return nil, status.Errorf(codes.Internal, "dispatch failed: %v", err)
 	}
 	return &pb.KeyReturnDebug{
@@ -139,8 +156,42 @@ func StreamServerLogging(srv any, ss grpc.ServerStream, info *grpc.StreamServerI
 	return err
 }
 
+// isLoopbackAddr reports whether addr binds only to a loopback interface.
+// An empty host binds to all interfaces and therefore is NOT loopback-only.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	host = strings.Trim(host, "[]")
+	if host == "localhost" {
+		return true
+	}
+	if host == "" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// StartService binds the gRPC endpoint and serves the key service.
+//
+// SECURITY: this is a local-only key mapping/injection daemon. It does NOT
+// implement TLS or any authentication, so it must only ever listen on a
+// loopback address (e.g. "localhost:50051" or "127.0.0.1:50051"). Binding it
+// to a non-loopback interface would let any host on the network drive key
+// presses on this machine. A warning is logged below when the configured
+// address is not loopback.
 func StartService(engine *Engine) (*grpc.Server, <-chan error, error) {
-	ln, err := net.Listen("tcp4", GlobalConfig.GRPCAddress)
+	addr := GlobalConfig.GRPCAddress
+	if !isLoopbackAddr(addr) {
+		slog.Default().LogAttrs(context.Background(), slog.LevelWarn,
+			"gRPC service binding to a non-loopback address",
+			slog.String("address", addr),
+			slog.String("note", "local-only key mapping service; TLS is not supported, do not expose it beyond localhost"),
+		)
+	}
+	ln, err := net.Listen("tcp4", addr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -166,7 +217,9 @@ func StartService(engine *Engine) (*grpc.Server, <-chan error, error) {
 	go func() {
 		defer close(serveErr)
 		if err := server.Serve(ln); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			slog.Error("Server stopped", "err", err)
+			slog.Default().LogAttrs(context.Background(), slog.LevelError, "Server stopped",
+				slog.Any("err", err),
+			)
 			serveErr <- err
 		}
 	}()
