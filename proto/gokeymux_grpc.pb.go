@@ -4,7 +4,7 @@
 // - protoc             v7.36.1
 // source: proto/gokeymux.proto
 
-package pb
+package proto
 
 import (
 	context "context"
@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	RpcKeyService_KeyService_FullMethodName      = "/GoKeyMux.rpcKeyService/keyService"
 	RpcKeyService_KeyServiceDebug_FullMethodName = "/GoKeyMux.rpcKeyService/keyServiceDebug"
+	RpcKeyService_MouseService_FullMethodName    = "/GoKeyMux.rpcKeyService/MouseService"
 )
 
 // RpcKeyServiceClient is the client API for RpcKeyService service.
@@ -29,6 +30,7 @@ const (
 type RpcKeyServiceClient interface {
 	KeyService(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[KeyInput, KeyReturn], error)
 	KeyServiceDebug(ctx context.Context, in *KeyInputDebug, opts ...grpc.CallOption) (*KeyReturnDebug, error)
+	MouseService(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[MouseEvent, MouseReturn], error)
 }
 
 type rpcKeyServiceClient struct {
@@ -62,12 +64,26 @@ func (c *rpcKeyServiceClient) KeyServiceDebug(ctx context.Context, in *KeyInputD
 	return out, nil
 }
 
+func (c *rpcKeyServiceClient) MouseService(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[MouseEvent, MouseReturn], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &RpcKeyService_ServiceDesc.Streams[1], RpcKeyService_MouseService_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[MouseEvent, MouseReturn]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type RpcKeyService_MouseServiceClient = grpc.ClientStreamingClient[MouseEvent, MouseReturn]
+
 // RpcKeyServiceServer is the server API for RpcKeyService service.
 // All implementations must embed UnimplementedRpcKeyServiceServer
 // for forward compatibility.
 type RpcKeyServiceServer interface {
 	KeyService(grpc.ClientStreamingServer[KeyInput, KeyReturn]) error
 	KeyServiceDebug(context.Context, *KeyInputDebug) (*KeyReturnDebug, error)
+	MouseService(grpc.ClientStreamingServer[MouseEvent, MouseReturn]) error
 	mustEmbedUnimplementedRpcKeyServiceServer()
 }
 
@@ -83,6 +99,9 @@ func (UnimplementedRpcKeyServiceServer) KeyService(grpc.ClientStreamingServer[Ke
 }
 func (UnimplementedRpcKeyServiceServer) KeyServiceDebug(context.Context, *KeyInputDebug) (*KeyReturnDebug, error) {
 	return nil, status.Error(codes.Unimplemented, "method KeyServiceDebug not implemented")
+}
+func (UnimplementedRpcKeyServiceServer) MouseService(grpc.ClientStreamingServer[MouseEvent, MouseReturn]) error {
+	return status.Error(codes.Unimplemented, "method MouseService not implemented")
 }
 func (UnimplementedRpcKeyServiceServer) mustEmbedUnimplementedRpcKeyServiceServer() {}
 func (UnimplementedRpcKeyServiceServer) testEmbeddedByValue()                       {}
@@ -105,14 +124,14 @@ func RegisterRpcKeyServiceServer(s grpc.ServiceRegistrar, srv RpcKeyServiceServe
 	s.RegisterService(&RpcKeyService_ServiceDesc, srv)
 }
 
-func _RpcKeyService_KeyService_Handler(srv interface{}, stream grpc.ServerStream) error {
+func _RpcKeyService_KeyService_Handler(srv any, stream grpc.ServerStream) error {
 	return srv.(RpcKeyServiceServer).KeyService(&grpc.GenericServerStream[KeyInput, KeyReturn]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type RpcKeyService_KeyServiceServer = grpc.ClientStreamingServer[KeyInput, KeyReturn]
 
-func _RpcKeyService_KeyServiceDebug_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _RpcKeyService_KeyServiceDebug_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(KeyInputDebug)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -124,11 +143,18 @@ func _RpcKeyService_KeyServiceDebug_Handler(srv interface{}, ctx context.Context
 		Server:     srv,
 		FullMethod: RpcKeyService_KeyServiceDebug_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(RpcKeyServiceServer).KeyServiceDebug(ctx, req.(*KeyInputDebug))
 	}
 	return interceptor(ctx, in, info, handler)
 }
+
+func _RpcKeyService_MouseService_Handler(srv any, stream grpc.ServerStream) error {
+	return srv.(RpcKeyServiceServer).MouseService(&grpc.GenericServerStream[MouseEvent, MouseReturn]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type RpcKeyService_MouseServiceServer = grpc.ClientStreamingServer[MouseEvent, MouseReturn]
 
 // RpcKeyService_ServiceDesc is the grpc.ServiceDesc for RpcKeyService service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -146,6 +172,11 @@ var RpcKeyService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "keyService",
 			Handler:       _RpcKeyService_KeyService_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "MouseService",
+			Handler:       _RpcKeyService_MouseService_Handler,
 			ClientStreams: true,
 		},
 	},

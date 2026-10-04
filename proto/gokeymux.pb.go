@@ -4,7 +4,7 @@
 // 	protoc        v7.36.1
 // source: proto/gokeymux.proto
 
-package pb
+package proto
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -20,6 +20,73 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
+
+type MouseEvent_EventType int32
+
+const (
+	MouseEvent_UNKNOWN     MouseEvent_EventType = 0
+	MouseEvent_MOVE        MouseEvent_EventType = 1 // 移动 (使用 x, y 作为相对增量)
+	MouseEvent_LEFT_DOWN   MouseEvent_EventType = 2 // 左键按下 (忽略 x, y)
+	MouseEvent_LEFT_UP     MouseEvent_EventType = 3 // 左键抬起 (忽略 x, y)
+	MouseEvent_RIGHT_DOWN  MouseEvent_EventType = 4 // 右键按下 (忽略 x, y)
+	MouseEvent_RIGHT_UP    MouseEvent_EventType = 5 // 右键抬起 (忽略 x, y)
+	MouseEvent_MIDDLE_DOWN MouseEvent_EventType = 6 // 中键按下 (忽略 x, y)
+	MouseEvent_MIDDLE_UP   MouseEvent_EventType = 7 // 中键抬起 (忽略 x, y)
+	MouseEvent_SCROLL      MouseEvent_EventType = 8 // 滚轮 (使用 scroll_delta，忽略 x, y)
+)
+
+// Enum value maps for MouseEvent_EventType.
+var (
+	MouseEvent_EventType_name = map[int32]string{
+		0: "UNKNOWN",
+		1: "MOVE",
+		2: "LEFT_DOWN",
+		3: "LEFT_UP",
+		4: "RIGHT_DOWN",
+		5: "RIGHT_UP",
+		6: "MIDDLE_DOWN",
+		7: "MIDDLE_UP",
+		8: "SCROLL",
+	}
+	MouseEvent_EventType_value = map[string]int32{
+		"UNKNOWN":     0,
+		"MOVE":        1,
+		"LEFT_DOWN":   2,
+		"LEFT_UP":     3,
+		"RIGHT_DOWN":  4,
+		"RIGHT_UP":    5,
+		"MIDDLE_DOWN": 6,
+		"MIDDLE_UP":   7,
+		"SCROLL":      8,
+	}
+)
+
+func (x MouseEvent_EventType) Enum() *MouseEvent_EventType {
+	p := new(MouseEvent_EventType)
+	*p = x
+	return p
+}
+
+func (x MouseEvent_EventType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MouseEvent_EventType) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_gokeymux_proto_enumTypes[0].Descriptor()
+}
+
+func (MouseEvent_EventType) Type() protoreflect.EnumType {
+	return &file_proto_gokeymux_proto_enumTypes[0]
+}
+
+func (x MouseEvent_EventType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MouseEvent_EventType.Descriptor instead.
+func (MouseEvent_EventType) EnumDescriptor() ([]byte, []int) {
+	return file_proto_gokeymux_proto_rawDescGZIP(), []int{4, 0}
+}
 
 type KeyInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -269,6 +336,132 @@ func (x *KeyReturnDebug) GetTimeStamp() string {
 	return ""
 }
 
+type MouseEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 事件类型
+	Type MouseEvent_EventType `protobuf:"varint,1,opt,name=type,proto3,enum=GoKeyMux.MouseEvent_EventType" json:"type,omitempty"`
+	// 仅在 type == MOVE 时有效。
+	// 表示鼠标在 X/Y 轴上的相对移动像素量（Delta）。
+	// 对于其他事件类型，此字段应被设为0
+	X int32 `protobuf:"varint,2,opt,name=x,proto3" json:"x,omitempty"`
+	Y int32 `protobuf:"varint,3,opt,name=y,proto3" json:"y,omitempty"`
+	// 滚轮增量
+	// 仅在 type == SCROLL 时有效。正数向上/向前，负数向下/向后。
+	ScrollDelta   int32 `protobuf:"varint,4,opt,name=scroll_delta,json=scrollDelta,proto3" json:"scroll_delta,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MouseEvent) Reset() {
+	*x = MouseEvent{}
+	mi := &file_proto_gokeymux_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MouseEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MouseEvent) ProtoMessage() {}
+
+func (x *MouseEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_gokeymux_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MouseEvent.ProtoReflect.Descriptor instead.
+func (*MouseEvent) Descriptor() ([]byte, []int) {
+	return file_proto_gokeymux_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *MouseEvent) GetType() MouseEvent_EventType {
+	if x != nil {
+		return x.Type
+	}
+	return MouseEvent_UNKNOWN
+}
+
+func (x *MouseEvent) GetX() int32 {
+	if x != nil {
+		return x.X
+	}
+	return 0
+}
+
+func (x *MouseEvent) GetY() int32 {
+	if x != nil {
+		return x.Y
+	}
+	return 0
+}
+
+func (x *MouseEvent) GetScrollDelta() int32 {
+	if x != nil {
+		return x.ScrollDelta
+	}
+	return 0
+}
+
+type MouseReturn struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	IsAllDone     bool                   `protobuf:"varint,1,opt,name=isAllDone,proto3" json:"isAllDone,omitempty"`
+	MetaData      string                 `protobuf:"bytes,2,opt,name=metaData,proto3" json:"metaData,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MouseReturn) Reset() {
+	*x = MouseReturn{}
+	mi := &file_proto_gokeymux_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MouseReturn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MouseReturn) ProtoMessage() {}
+
+func (x *MouseReturn) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_gokeymux_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MouseReturn.ProtoReflect.Descriptor instead.
+func (*MouseReturn) Descriptor() ([]byte, []int) {
+	return file_proto_gokeymux_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *MouseReturn) GetIsAllDone() bool {
+	if x != nil {
+		return x.IsAllDone
+	}
+	return false
+}
+
+func (x *MouseReturn) GetMetaData() string {
+	if x != nil {
+		return x.MetaData
+	}
+	return ""
+}
+
 var File_proto_gokeymux_proto protoreflect.FileDescriptor
 
 const file_proto_gokeymux_proto_rawDesc = "" +
@@ -292,11 +485,33 @@ const file_proto_gokeymux_proto_rawDesc = "" +
 	"isFinished\x18\x01 \x01(\bR\n" +
 	"isFinished\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x1c\n" +
-	"\ttimeStamp\x18\x03 \x01(\tR\ttimeStamp2\x8e\x01\n" +
+	"\ttimeStamp\x18\x03 \x01(\tR\ttimeStamp\"\x8a\x02\n" +
+	"\n" +
+	"MouseEvent\x122\n" +
+	"\x04type\x18\x01 \x01(\x0e2\x1e.GoKeyMux.MouseEvent.EventTypeR\x04type\x12\f\n" +
+	"\x01x\x18\x02 \x01(\x05R\x01x\x12\f\n" +
+	"\x01y\x18\x03 \x01(\x05R\x01y\x12!\n" +
+	"\fscroll_delta\x18\x04 \x01(\x05R\vscrollDelta\"\x88\x01\n" +
+	"\tEventType\x12\v\n" +
+	"\aUNKNOWN\x10\x00\x12\b\n" +
+	"\x04MOVE\x10\x01\x12\r\n" +
+	"\tLEFT_DOWN\x10\x02\x12\v\n" +
+	"\aLEFT_UP\x10\x03\x12\x0e\n" +
+	"\n" +
+	"RIGHT_DOWN\x10\x04\x12\f\n" +
+	"\bRIGHT_UP\x10\x05\x12\x0f\n" +
+	"\vMIDDLE_DOWN\x10\x06\x12\r\n" +
+	"\tMIDDLE_UP\x10\a\x12\n" +
+	"\n" +
+	"\x06SCROLL\x10\b\"G\n" +
+	"\vMouseReturn\x12\x1c\n" +
+	"\tisAllDone\x18\x01 \x01(\bR\tisAllDone\x12\x1a\n" +
+	"\bmetaData\x18\x02 \x01(\tR\bmetaData2\xcd\x01\n" +
 	"\rrpcKeyService\x127\n" +
 	"\n" +
 	"keyService\x12\x12.GoKeyMux.keyInput\x1a\x13.GoKeyMux.keyReturn(\x01\x12D\n" +
-	"\x0fkeyServiceDebug\x12\x17.GoKeyMux.keyInputDebug\x1a\x18.GoKeyMux.keyReturnDebugB\x13Z\x11GoKeyMux/proto/pbb\x06proto3"
+	"\x0fkeyServiceDebug\x12\x17.GoKeyMux.keyInputDebug\x1a\x18.GoKeyMux.keyReturnDebug\x12=\n" +
+	"\fMouseService\x12\x14.GoKeyMux.MouseEvent\x1a\x15.GoKeyMux.MouseReturn(\x01B\x10Z\x0eGoKeyMux/protob\x06proto3"
 
 var (
 	file_proto_gokeymux_proto_rawDescOnce sync.Once
@@ -310,23 +525,30 @@ func file_proto_gokeymux_proto_rawDescGZIP() []byte {
 	return file_proto_gokeymux_proto_rawDescData
 }
 
-var file_proto_gokeymux_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_proto_gokeymux_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_proto_gokeymux_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_proto_gokeymux_proto_goTypes = []any{
-	(*KeyInput)(nil),       // 0: GoKeyMux.keyInput
-	(*KeyReturn)(nil),      // 1: GoKeyMux.keyReturn
-	(*KeyInputDebug)(nil),  // 2: GoKeyMux.keyInputDebug
-	(*KeyReturnDebug)(nil), // 3: GoKeyMux.keyReturnDebug
+	(MouseEvent_EventType)(0), // 0: GoKeyMux.MouseEvent.EventType
+	(*KeyInput)(nil),          // 1: GoKeyMux.keyInput
+	(*KeyReturn)(nil),         // 2: GoKeyMux.keyReturn
+	(*KeyInputDebug)(nil),     // 3: GoKeyMux.keyInputDebug
+	(*KeyReturnDebug)(nil),    // 4: GoKeyMux.keyReturnDebug
+	(*MouseEvent)(nil),        // 5: GoKeyMux.MouseEvent
+	(*MouseReturn)(nil),       // 6: GoKeyMux.MouseReturn
 }
 var file_proto_gokeymux_proto_depIdxs = []int32{
-	0, // 0: GoKeyMux.rpcKeyService.keyService:input_type -> GoKeyMux.keyInput
-	2, // 1: GoKeyMux.rpcKeyService.keyServiceDebug:input_type -> GoKeyMux.keyInputDebug
-	1, // 2: GoKeyMux.rpcKeyService.keyService:output_type -> GoKeyMux.keyReturn
-	3, // 3: GoKeyMux.rpcKeyService.keyServiceDebug:output_type -> GoKeyMux.keyReturnDebug
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0, // 0: GoKeyMux.MouseEvent.type:type_name -> GoKeyMux.MouseEvent.EventType
+	1, // 1: GoKeyMux.rpcKeyService.keyService:input_type -> GoKeyMux.keyInput
+	3, // 2: GoKeyMux.rpcKeyService.keyServiceDebug:input_type -> GoKeyMux.keyInputDebug
+	5, // 3: GoKeyMux.rpcKeyService.MouseService:input_type -> GoKeyMux.MouseEvent
+	2, // 4: GoKeyMux.rpcKeyService.keyService:output_type -> GoKeyMux.keyReturn
+	4, // 5: GoKeyMux.rpcKeyService.keyServiceDebug:output_type -> GoKeyMux.keyReturnDebug
+	6, // 6: GoKeyMux.rpcKeyService.MouseService:output_type -> GoKeyMux.MouseReturn
+	4, // [4:7] is the sub-list for method output_type
+	1, // [1:4] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_proto_gokeymux_proto_init() }
@@ -337,15 +559,16 @@ func file_proto_gokeymux_proto_init() {
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
-			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
+			GoPackagePath: reflect.TypeFor[x]().PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_gokeymux_proto_rawDesc), len(file_proto_gokeymux_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   4,
+			NumEnums:      1,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_proto_gokeymux_proto_goTypes,
 		DependencyIndexes: file_proto_gokeymux_proto_depIdxs,
+		EnumInfos:         file_proto_gokeymux_proto_enumTypes,
 		MessageInfos:      file_proto_gokeymux_proto_msgTypes,
 	}.Build()
 	File_proto_gokeymux_proto = out.File
