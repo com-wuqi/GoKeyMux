@@ -47,8 +47,8 @@ func TestFillControlReportLayout(t *testing.T) {
 // them all simultaneously (press a, press b = hold ab).
 func TestKeyDownAccumulates(t *testing.T) {
 	d := &FakerInputDevice{}
-	d.keyDownLocked(fakerInputKeyA, 0)
-	d.keyDownLocked(fakerInputKeyB, 0)
+	d.keyDown(fakerInputKeyA, 0)
+	d.keyDown(fakerInputKeyB, 0)
 
 	if d.keyCount != 2 {
 		t.Fatalf("keyCount = %d, want 2", d.keyCount)
@@ -66,8 +66,8 @@ func TestKeyDownAccumulates(t *testing.T) {
 // duplicate slot or double up.
 func TestKeyDownIdempotent(t *testing.T) {
 	d := &FakerInputDevice{}
-	d.keyDownLocked(fakerInputKeyA, 0)
-	d.keyDownLocked(fakerInputKeyA, 0)
+	d.keyDown(fakerInputKeyA, 0)
+	d.keyDown(fakerInputKeyA, 0)
 
 	if d.keyCount != 1 {
 		t.Fatalf("keyCount = %d, want 1", d.keyCount)
@@ -77,9 +77,9 @@ func TestKeyDownIdempotent(t *testing.T) {
 // TestKeyUpReleasesSingle verifies releasing one key leaves the other held.
 func TestKeyUpReleasesSingle(t *testing.T) {
 	d := &FakerInputDevice{}
-	d.keyDownLocked(fakerInputKeyA, 0)
-	d.keyDownLocked(fakerInputKeyB, 0)
-	d.keyUpLocked(fakerInputKeyA, 0)
+	d.keyDown(fakerInputKeyA, 0)
+	d.keyDown(fakerInputKeyB, 0)
+	d.keyUp(fakerInputKeyA, 0)
 
 	if d.keyCount != 1 {
 		t.Fatalf("keyCount = %d, want 1", d.keyCount)
@@ -94,9 +94,9 @@ func TestKeyUpReleasesSingle(t *testing.T) {
 // shifted key does not drop shift while another shifted key is still held.
 func TestModifierUnion(t *testing.T) {
 	d := &FakerInputDevice{}
-	d.keyDownLocked(fakerInputKeyA, ModLShift)
-	d.keyDownLocked(fakerInputKey2, ModLShift) // '@' shares shift
-	d.keyUpLocked(fakerInputKeyA, ModLShift)
+	d.keyDown(fakerInputKeyA, ModLShift)
+	d.keyDown(fakerInputKey2, ModLShift) // '@' shares shift
+	d.keyUp(fakerInputKeyA, ModLShift)
 
 	mods, keys := d.heldState()
 	if mods&ModLShift == 0 {
@@ -111,13 +111,13 @@ func TestModifierUnion(t *testing.T) {
 // has a modifier mask, and is removed once its mask is empty.
 func TestKeyUpClearsModifiersOnEmptyMask(t *testing.T) {
 	d := &FakerInputDevice{}
-	d.keyDownLocked(fakerInputKeyA, ModLShift)
-	d.keyDownLocked(fakerInputKeyA, ModLCtrl) // accumulates ctrl on the same key
+	d.keyDown(fakerInputKeyA, ModLShift)
+	d.keyDown(fakerInputKeyA, ModLCtrl) // accumulates ctrl on the same key
 	if d.keyCount != 1 {
 		t.Fatalf("keyCount = %d, want 1", d.keyCount)
 	}
 
-	d.keyUpLocked(fakerInputKeyA, ModLCtrl)
+	d.keyUp(fakerInputKeyA, ModLCtrl)
 	if d.keyCount != 1 {
 		t.Fatalf("key still should be held: keyCount = %d, want 1", d.keyCount)
 	}
@@ -126,7 +126,7 @@ func TestKeyUpClearsModifiersOnEmptyMask(t *testing.T) {
 		t.Fatalf("mods = %#x, want %#x", mods, ModLShift)
 	}
 
-	d.keyUpLocked(fakerInputKeyA, ModLShift)
+	d.keyUp(fakerInputKeyA, ModLShift)
 	if d.keyCount != 0 {
 		t.Fatalf("key should be released: keyCount = %d, want 0", d.keyCount)
 	}
@@ -140,7 +140,7 @@ func TestKeyDownSixKeyCap(t *testing.T) {
 		fakerInputKeyE, fakerInputKeyF, fakerInputKeyG,
 	}
 	for _, c := range codes {
-		d.keyDownLocked(c, 0)
+		d.keyDown(c, 0)
 	}
 	if d.keyCount != fakerInputKeyCodeCount {
 		t.Fatalf("keyCount = %d, want %d", d.keyCount, fakerInputKeyCodeCount)
@@ -150,9 +150,9 @@ func TestKeyDownSixKeyCap(t *testing.T) {
 // TestReleaseAll verifies ReleaseAll clears the held-key state.
 func TestReleaseAll(t *testing.T) {
 	d := &FakerInputDevice{}
-	d.keyDownLocked(fakerInputKeyA, ModLShift)
-	d.keyDownLocked(fakerInputKeyB, ModLCtrl)
-	d.releaseAllLocked()
+	d.keyDown(fakerInputKeyA, ModLShift)
+	d.keyDown(fakerInputKeyB, ModLCtrl)
+	d.releaseAll()
 
 	if d.keyCount != 0 {
 		t.Fatalf("keyCount = %d, want 0", d.keyCount)
@@ -469,13 +469,13 @@ func TestKeyCodesFromRunes(t *testing.T) {
 func TestStandaloneModifier(t *testing.T) {
 	d := &FakerInputDevice{}
 
-	d.keyDownLocked(0, ModLCtrl)
+	d.keyDown(0, ModLCtrl)
 	mods, _ := d.heldState()
 	if mods&ModLCtrl == 0 {
 		t.Fatalf("ctrl not held: mods=%#x", mods)
 	}
 
-	d.keyDownLocked(fakerInputKeyA, 0)
+	d.keyDown(fakerInputKeyA, 0)
 	mods, keys := d.heldState()
 	if mods&ModLCtrl == 0 {
 		t.Fatalf("ctrl lost after pressing a key: mods=%#x", mods)
@@ -484,13 +484,13 @@ func TestStandaloneModifier(t *testing.T) {
 		t.Fatalf("key a not held: %v", keys)
 	}
 
-	d.keyUpLocked(fakerInputKeyA, 0)
+	d.keyUp(fakerInputKeyA, 0)
 	mods, _ = d.heldState()
 	if mods&ModLCtrl == 0 {
 		t.Fatalf("ctrl lost after releasing a key: mods=%#x", mods)
 	}
 
-	d.keyUpLocked(0, ModLCtrl)
+	d.keyUp(0, ModLCtrl)
 	mods, _ = d.heldState()
 	if mods != 0 {
 		t.Fatalf("mods = %#x, want 0", mods)
@@ -501,9 +501,9 @@ func TestStandaloneModifier(t *testing.T) {
 // modifier-only state as well as held keys.
 func TestReleaseAllClearsStandaloneModifiers(t *testing.T) {
 	d := &FakerInputDevice{}
-	d.keyDownLocked(0, ModLAlt)
-	d.keyDownLocked(fakerInputKeyA, 0)
-	d.releaseAllLocked()
+	d.keyDown(0, ModLAlt)
+	d.keyDown(fakerInputKeyA, 0)
+	d.releaseAll()
 
 	if d.keyCount != 0 {
 		t.Fatalf("keyCount = %d, want 0", d.keyCount)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"sync"
 	"syscall"
 	"unsafe"
 
@@ -65,8 +64,10 @@ type hidAttributes struct {
 // It tracks the currently held keyboard state (up to 6 key codes plus a
 // per-key modifier mask) so that KeyDown/KeyUp can be issued independently
 // without clobbering other held keys.
+//
+// It is not safe for concurrent use: all state mutation is serialized by the
+// single Engine worker goroutine, so no internal lock is needed.
 type FakerInputDevice struct {
-	mu     sync.Mutex
 	handle windows.Handle
 
 	// Held key slots. Each slot stores one key code and the modifier flags
@@ -82,9 +83,9 @@ type FakerInputDevice struct {
 	// per-key modifiers when building a report.
 	heldMods byte
 
-	// reportBuf is a reusable control report buffer. It is only touched while
-	// mu is held, so it needs no further synchronization and avoids a heap
-	// allocation on every key event.
+	// reportBuf is a reusable control report buffer. It is only touched from
+	// the Engine worker goroutine, so it needs no further synchronization and
+	// avoids a heap allocation on every key event.
 	reportBuf [65]byte
 }
 
@@ -213,9 +214,7 @@ func (d *FakerInputDevice) CheckAPIVersion() (uint32, error) {
 // flags are held for this key while it is down; pressing an already-held code
 // ORs the new modifiers into it.
 func (d *FakerInputDevice) KeyDown(code byte, modifiers byte) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.keyDownLocked(code, modifiers)
+	return d.keyDown(code, modifiers)
 }
 
 // KeyUp releases a single previously held key. If modifiers is non-zero, only
@@ -223,60 +222,50 @@ func (d *FakerInputDevice) KeyDown(code byte, modifiers byte) error {
 // held until its modifier mask is empty. modifiers must mirror the flags that
 // were held by the matching KeyDown.
 func (d *FakerInputDevice) KeyUp(code byte, modifiers byte) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.keyUpLocked(code, modifiers)
+	return d.keyUp(code, modifiers)
 }
 
 // ReleaseAll releases every held key and modifier at once.
 func (d *FakerInputDevice) ReleaseAll() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.releaseAllLocked()
+	return d.releaseAll()
 }
 
 // SetKeys replaces the held-key state with the given keys (up to 6) and a
 // single modifier mask applied to all of them. Codes beyond the first 6 are
 // ignored; an empty slice releases all keys.
 func (d *FakerInputDevice) SetKeys(codes []byte, modifiers byte) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.setKeysLocked(codes, modifiers)
+	return d.setKeys(codes, modifiers)
 }
 
 // Tap presses and releases a single key.
 func (d *FakerInputDevice) Tap(code byte, modifiers byte) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.tapLocked(code, modifiers)
+	return d.tap(code, modifiers)
 }
 
 // TypeText types the printable ASCII characters in s. Non-printable characters
 // are ignored; newline is mapped to Enter.
 func (d *FakerInputDevice) TypeText(s string) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	for _, r := range s {
 		code, mod, ok := FakerInputKeyFromRune(r)
 		if !ok {
 			continue
 		}
-		if err := d.tapLocked(code, mod); err != nil {
+		if err := d.tap(code, mod); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (d *FakerInputDevice) keyDownLocked(code byte, modifiers byte) error {
+func (d *FakerInputDevice) keyDown(code byte, modifiers byte) error {
 	if code == 0 {
 		d.heldMods |= modifiers
-		return d.sendHeldLocked()
+		return d.sendHeld()
 	}
 	for i := 0; i < d.keyCount; i++ {
 		if d.keys[i] == code {
 			d.keyMods[i] |= modifiers
-			return d.sendHeldLocked()
+			return d.sendHeld()
 		}
 	}
 	if d.keyCount < fakerInputKeyCodeCount {
@@ -284,13 +273,13 @@ func (d *FakerInputDevice) keyDownLocked(code byte, modifiers byte) error {
 		d.keyMods[d.keyCount] = modifiers
 		d.keyCount++
 	}
-	return d.sendHeldLocked()
+	return d.sendHeld()
 }
 
-func (d *FakerInputDevice) keyUpLocked(code byte, modifiers byte) error {
+func (d *FakerInputDevice) keyUp(code byte, modifiers byte) error {
 	if code == 0 {
 		d.heldMods &^= modifiers
-		return d.sendHeldLocked()
+		return d.sendHeld()
 	}
 	for i := 0; i < d.keyCount; i++ {
 		if d.keys[i] == code {
@@ -303,10 +292,10 @@ func (d *FakerInputDevice) keyUpLocked(code byte, modifiers byte) error {
 			break
 		}
 	}
-	return d.sendHeldLocked()
+	return d.sendHeld()
 }
 
-func (d *FakerInputDevice) setKeysLocked(codes []byte, modifiers byte) error {
+func (d *FakerInputDevice) setKeys(codes []byte, modifiers byte) error {
 	d.keyCount = 0
 	for _, c := range codes {
 		if c == 0 {
@@ -319,20 +308,20 @@ func (d *FakerInputDevice) setKeysLocked(codes []byte, modifiers byte) error {
 		d.keyMods[d.keyCount] = modifiers
 		d.keyCount++
 	}
-	return d.sendHeldLocked()
+	return d.sendHeld()
 }
 
-func (d *FakerInputDevice) releaseAllLocked() error {
+func (d *FakerInputDevice) releaseAll() error {
 	d.keyCount = 0
 	d.heldMods = 0
-	return d.sendHeldLocked()
+	return d.sendHeld()
 }
 
-func (d *FakerInputDevice) tapLocked(code byte, modifiers byte) error {
-	if err := d.keyDownLocked(code, modifiers); err != nil {
+func (d *FakerInputDevice) tap(code byte, modifiers byte) error {
+	if err := d.keyDown(code, modifiers); err != nil {
 		return err
 	}
-	return d.keyUpLocked(code, modifiers)
+	return d.keyUp(code, modifiers)
 }
 
 // heldState returns the effective keyboard state: the OR of all held keys'
@@ -346,11 +335,11 @@ func (d *FakerInputDevice) heldState() (mods byte, keys [fakerInputKeyCodeCount]
 	return mods, keys
 }
 
-// sendHeldLocked assembles the current held-key state and writes it to the
+// sendHeld assembles the current held-key state and writes it to the
 // device.
-func (d *FakerInputDevice) sendHeldLocked() error {
+func (d *FakerInputDevice) sendHeld() error {
 	mods, keys := d.heldState()
-	return d.sendKeyboardReportLocked(mods, keys)
+	return d.sendKeyboardReport(mods, keys)
 }
 
 // fillKeyboardReport assembles a 9-byte keyboard input report into dst:
@@ -376,10 +365,10 @@ func fillControlReport(dst *[65]byte, inner []byte) {
 	clear(dst[2+len(inner):])
 }
 
-// sendKeyboardReportLocked writes a keyboard input report into the device's
+// sendKeyboardReport writes a keyboard input report into the device's
 // reusable report buffer and injects it via the control report. It performs no
 // heap allocation.
-func (d *FakerInputDevice) sendKeyboardReportLocked(modifiers byte, keys [fakerInputKeyCodeCount]byte) error {
+func (d *FakerInputDevice) sendKeyboardReport(modifiers byte, keys [fakerInputKeyCodeCount]byte) error {
 	if d == nil || d.handle == windows.InvalidHandle {
 		return errors.New("FakerInput device is not open")
 	}

@@ -94,6 +94,7 @@ type Config struct {
 	WinputWindowIndex                  int       `json:"winputWindowIndex"`                  // (winput无Interception驱动) 窗口index
 	PprofAddress                       string    `json:"pprofAddress"`                       // 可选 pprof 监听地址，空表示关闭
 	NoopLatencyMicros                  int       `json:"noopLatencyMicros"`                  // (noop后端) 每次按键模拟延迟 单位 微秒
+	DispatchQueueSize                  int       `json:"dispatchQueueSize"`                  // 按键派发队列缓冲大小（单 worker 串行处理）
 }
 
 var GlobalConfig Config
@@ -117,6 +118,7 @@ func LoadConfig() error {
 			WinputWindowIndex:                  0,
 			PprofAddress:                       "",
 			NoopLatencyMicros:                  0,
+			DispatchQueueSize:                  1024,
 		}
 		jsonBytes, err := json.MarshalIndent(defaultConfig, "", "  ")
 		if err != nil {

@@ -102,22 +102,23 @@ go build -o loadtest.exe ./cmd/loadtest
 
 首次运行（或删除 `config.json` 后运行）会自动生成默认配置。字段如下：
 
-| 字段                                 | 类型   | 默认值            | 说明                                                   |
-|--------------------------------------|--------|-------------------|--------------------------------------------------------|
-| `driveName`                          | string | `makc`            | 后端驱动，取值见上方表格                               |
+| 字段                                 | 类型   | 默认值            | 说明                                                        |
+|--------------------------------------|--------|-------------------|-------------------------------------------------------------|
+| `driveName`                          | string | `makc`            | 后端驱动，取值见上方表格                                    |
 | `gRPCAddress`                        | string | `localhost:50051` | gRPC 监听地址（`tcp4`）；仅限回环地址，非回环地址会触发警告 |
-| `logLevel`                           | string | `info`            | 日志等级：`debug` / `info` / `warn` / `error`          |
-| `gRPCKeepaliveTime`                  | int    | `2`               | keepalive `Time`，单位秒                               |
-| `gRPCKeepaliveTimeOut`               | int    | `1`               | keepalive `Timeout`，单位秒                            |
-| `gRPCKeepaliveMaxConnectionIdle`     | int    | `2`               | keepalive `MaxConnectionIdle`，单位秒                  |
-| `gRPCEnforcementPolicyMinTime`       | int    | `10`              | EnforcementPolicy `MinTime`，单位秒                    |
-| `gRPCEnforcementPermitWithoutStream` | bool   | `true`            | EnforcementPolicy `PermitWithoutStream`                |
-| `gRPCServerShutdownTimeout`          | int    | `10`              | 优雅关闭超时，单位秒                                   |
-| `winputWindowProcessName`            | string | `Game.exe`        | (`winputWithWindow`) 按进程名查找窗口                  |
-| `winputWindowUseStaticIndex`         | bool   | `true`            | (`winputWithWindow`) 是否使用固定窗口索引              |
-| `winputWindowIndex`                  | int    | `0`               | (`winputWithWindow`) 窗口索引                          |
-| `pprofAddress`                       | string | `""`              | 可选 pprof 监听地址，空表示关闭（如 `localhost:6060`） |
-| `noopLatencyMicros`                  | int    | `0`               | (`noop`) 每次按键模拟延迟，单位微秒                    |
+| `logLevel`                           | string | `info`            | 日志等级：`debug` / `info` / `warn` / `error`               |
+| `gRPCKeepaliveTime`                  | int    | `2`               | keepalive `Time`，单位秒                                    |
+| `gRPCKeepaliveTimeOut`               | int    | `1`               | keepalive `Timeout`，单位秒                                 |
+| `gRPCKeepaliveMaxConnectionIdle`     | int    | `2`               | keepalive `MaxConnectionIdle`，单位秒                       |
+| `gRPCEnforcementPolicyMinTime`       | int    | `10`              | EnforcementPolicy `MinTime`，单位秒                         |
+| `gRPCEnforcementPermitWithoutStream` | bool   | `true`            | EnforcementPolicy `PermitWithoutStream`                     |
+| `gRPCServerShutdownTimeout`          | int    | `10`              | 优雅关闭超时，单位秒                                        |
+| `winputWindowProcessName`            | string | `Game.exe`        | (`winputWithWindow`) 按进程名查找窗口                       |
+| `winputWindowUseStaticIndex`         | bool   | `true`            | (`winputWithWindow`) 是否使用固定窗口索引                   |
+| `winputWindowIndex`                  | int    | `0`               | (`winputWithWindow`) 窗口索引                               |
+| `pprofAddress`                       | string | `""`              | 可选 pprof 监听地址，空表示关闭（如 `localhost:6060`）      |
+| `noopLatencyMicros`                  | int    | `0`               | (`noop`) 每次按键模拟延迟，单位微秒                         |
+| `dispatchQueueSize`                  | int    | `1024`            | 按键派发队列缓冲大小；满时发送方 FIFO 阻塞                  |
 
 示例：
 
@@ -136,7 +137,8 @@ go build -o loadtest.exe ./cmd/loadtest
   "winputWindowUseStaticIndex": true,
   "winputWindowIndex": 0,
   "pprofAddress": "",
-  "noopLatencyMicros": 0
+  "noopLatencyMicros": 0,
+  "dispatchQueueSize": 1024
 }
 ```
 
