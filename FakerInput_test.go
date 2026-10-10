@@ -25,6 +25,104 @@ func TestFillKeyboardReport(t *testing.T) {
 	}
 }
 
+func TestFillRelativeMouseReport(t *testing.T) {
+	var got [fakerInputRelativeMouseReportSize]byte
+	fillRelativeMouseReport(&got, fakerInputMouseButtonLeft|fakerInputMouseButtonMiddle, -2, 3, -4, 5)
+	want := [fakerInputRelativeMouseReportSize]byte{
+		0x03,
+		fakerInputMouseButtonLeft | fakerInputMouseButtonMiddle,
+		0xFE, 0xFF, // XValue = -2
+		0x03, 0x00, // YValue = 3
+		0xFC, // WheelPosition = -4
+		0x05, // HWheelPosition = 5
+	}
+	if got != want {
+		t.Fatalf("fillRelativeMouseReport = %v, want %v", got, want)
+	}
+}
+
+func TestFillAbsoluteMouseReport(t *testing.T) {
+	var got [fakerInputAbsoluteMouseReportSize]byte
+	fillAbsoluteMouseReport(&got, fakerInputMouseButtonRight, 0x1234, 0xABCD, -7)
+	want := [fakerInputAbsoluteMouseReportSize]byte{
+		0x04,
+		fakerInputMouseButtonRight,
+		0x34, 0x12, // XValue = 0x1234
+		0xCD, 0xAB, // YValue = 0xABCD
+		0xF9, // WheelPosition = -7
+	}
+	if got != want {
+		t.Fatalf("fillAbsoluteMouseReport = %v, want %v", got, want)
+	}
+}
+
+// TestMouseButtonState verifies mouse buttons accumulate as a bitmask and
+// release independently.
+func TestMouseButtonState(t *testing.T) {
+	d := &FakerInputDevice{}
+	d.MouseButtonDown(fakerInputMouseButtonLeft)
+	d.MouseButtonDown(fakerInputMouseButtonRight)
+
+	if d.mouseButtons != fakerInputMouseButtonLeft|fakerInputMouseButtonRight {
+		t.Fatalf("mouseButtons = %#x, want %#x", d.mouseButtons, fakerInputMouseButtonLeft|fakerInputMouseButtonRight)
+	}
+
+	d.MouseButtonUp(fakerInputMouseButtonLeft)
+	if d.mouseButtons != fakerInputMouseButtonRight {
+		t.Fatalf("mouseButtons = %#x, want %#x", d.mouseButtons, fakerInputMouseButtonRight)
+	}
+
+	d.ReleaseAllButtons()
+	if d.mouseButtons != 0 {
+		t.Fatalf("mouseButtons = %#x, want 0", d.mouseButtons)
+	}
+}
+
+// TestMouseMoveCarriesHeldButtons verifies that a movement report built from
+// the device's state still carries the currently held buttons (required for
+// dragging).
+func TestMouseMoveCarriesHeldButtons(t *testing.T) {
+	d := &FakerInputDevice{}
+	d.MouseButtonDown(fakerInputMouseButtonLeft)
+
+	var got [fakerInputRelativeMouseReportSize]byte
+	fillRelativeMouseReport(&got, d.mouseButtons, 10, 20, 0, 0)
+	if got[1] != fakerInputMouseButtonLeft {
+		t.Fatalf("move report button byte = %#x, want %#x", got[1], fakerInputMouseButtonLeft)
+	}
+}
+
+// TestMouseKeyboardIndependent verifies keyboard and mouse state are fully
+// independent: holding a key and a mouse button simultaneously does not disturb
+// either state. This is the core of the simultaneous input guarantee.
+func TestMouseKeyboardIndependent(t *testing.T) {
+	d := &FakerInputDevice{}
+	d.keyDown(fakerInputKeyA, ModLShift)
+	d.MouseButtonDown(fakerInputMouseButtonLeft)
+
+	mods, keys := d.heldState()
+	if mods != ModLShift {
+		t.Fatalf("keyboard mods = %#x, want %#x", mods, ModLShift)
+	}
+	if !containsKey(keys, fakerInputKeyA) {
+		t.Fatalf("held keys = %v, want a", keys)
+	}
+
+	if d.mouseButtons != fakerInputMouseButtonLeft {
+		t.Fatalf("mouseButtons = %#x, want %#x", d.mouseButtons, fakerInputMouseButtonLeft)
+	}
+
+	d.MouseButtonUp(fakerInputMouseButtonLeft)
+	d.keyUp(fakerInputKeyA, ModLShift)
+
+	if d.mouseButtons != 0 {
+		t.Fatalf("mouseButtons = %#x, want 0", d.mouseButtons)
+	}
+	if d.keyCount != 0 {
+		t.Fatalf("keyCount = %d, want 0", d.keyCount)
+	}
+}
+
 func TestFillControlReportLayout(t *testing.T) {
 	inner := []byte{0x01, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00}
 	var report [65]byte

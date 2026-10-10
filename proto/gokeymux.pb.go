@@ -33,6 +33,7 @@ const (
 	MouseEvent_MIDDLE_DOWN MouseEvent_EventType = 6 // 中键按下 (忽略 x, y)
 	MouseEvent_MIDDLE_UP   MouseEvent_EventType = 7 // 中键抬起 (忽略 x, y)
 	MouseEvent_SCROLL      MouseEvent_EventType = 8 // 滚轮 (使用 scroll_delta，忽略 x, y)
+	MouseEvent_ABS_MOVE    MouseEvent_EventType = 9 // 绝对移动 (x, y 为归一化坐标 0~10000)
 )
 
 // Enum value maps for MouseEvent_EventType.
@@ -47,6 +48,7 @@ var (
 		6: "MIDDLE_DOWN",
 		7: "MIDDLE_UP",
 		8: "SCROLL",
+		9: "ABS_MOVE",
 	}
 	MouseEvent_EventType_value = map[string]int32{
 		"UNKNOWN":     0,
@@ -58,6 +60,7 @@ var (
 		"MIDDLE_DOWN": 6,
 		"MIDDLE_UP":   7,
 		"SCROLL":      8,
+		"ABS_MOVE":    9,
 	}
 )
 
@@ -485,13 +488,13 @@ const file_proto_gokeymux_proto_rawDesc = "" +
 	"isFinished\x18\x01 \x01(\bR\n" +
 	"isFinished\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x1c\n" +
-	"\ttimeStamp\x18\x03 \x01(\tR\ttimeStamp\"\x8a\x02\n" +
+	"\ttimeStamp\x18\x03 \x01(\tR\ttimeStamp\"\x98\x02\n" +
 	"\n" +
 	"MouseEvent\x122\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x1e.GoKeyMux.MouseEvent.EventTypeR\x04type\x12\f\n" +
 	"\x01x\x18\x02 \x01(\x05R\x01x\x12\f\n" +
 	"\x01y\x18\x03 \x01(\x05R\x01y\x12!\n" +
-	"\fscroll_delta\x18\x04 \x01(\x05R\vscrollDelta\"\x88\x01\n" +
+	"\fscroll_delta\x18\x04 \x01(\x05R\vscrollDelta\"\x96\x01\n" +
 	"\tEventType\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\b\n" +
 	"\x04MOVE\x10\x01\x12\r\n" +
@@ -503,7 +506,8 @@ const file_proto_gokeymux_proto_rawDesc = "" +
 	"\vMIDDLE_DOWN\x10\x06\x12\r\n" +
 	"\tMIDDLE_UP\x10\a\x12\n" +
 	"\n" +
-	"\x06SCROLL\x10\b\"G\n" +
+	"\x06SCROLL\x10\b\x12\f\n" +
+	"\bABS_MOVE\x10\t\"G\n" +
 	"\vMouseReturn\x12\x1c\n" +
 	"\tisAllDone\x18\x01 \x01(\bR\tisAllDone\x12\x1a\n" +
 	"\bmetaData\x18\x02 \x01(\tR\bmetaData2\xcd\x01\n" +
@@ -559,7 +563,7 @@ func file_proto_gokeymux_proto_init() {
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
-			GoPackagePath: reflect.TypeFor[x]().PkgPath(),
+			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_gokeymux_proto_rawDesc), len(file_proto_gokeymux_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   6,
