@@ -78,8 +78,12 @@ type hidAttributes struct {
 // per-key modifier mask) so that KeyDown/KeyUp can be issued independently
 // without clobbering other held keys.
 //
-// It is not safe for concurrent use: all state mutation is serialized by the
-// single Engine worker goroutine, so no internal lock is needed.
+// It is safe for concurrent keyboard and mouse injection: keyboard state is
+// only mutated by the Engine keyboard worker and mouse state (mouseButtons)
+// only by the Engine mouse worker, and each stream uses its own report buffer
+// (kbdReportBuf / mouseReportBuf). The device handle itself supports concurrent
+// synchronous writes. It is NOT safe for two goroutines to drive the same
+// stream (e.g. two keyboard workers) concurrently.
 type FakerInputDevice struct {
 	handle windows.Handle
 
@@ -102,10 +106,12 @@ type FakerInputDevice struct {
 	// state above, so keyboard and mouse input never clobber each other.
 	mouseButtons byte
 
-	// reportBuf is a reusable control report buffer. It is only touched from
-	// the Engine worker goroutine, so it needs no further synchronization and
-	// avoids a heap allocation on every key event.
-	reportBuf [65]byte
+	// kbdReportBuf and mouseReportBuf are reusable control report buffers, one
+	// per stream. Keeping them separate lets the keyboard and mouse workers
+	// inject simultaneously without racing on a shared buffer, and avoids a
+	// heap allocation on every event.
+	kbdReportBuf   [65]byte
+	mouseReportBuf [65]byte
 }
 
 // FakerInputInit finds and opens the FakerInput control collection, the handle
@@ -290,7 +296,7 @@ func (d *FakerInputDevice) MouseMoveTo(x, y uint16) error {
 }
 
 // MouseButtonDown presses a mouse button and keeps it held. The button is one
-// of the fakerInputMouseButton* bits.
+// of the FakerInputMouseButton* bits.
 func (d *FakerInputDevice) MouseButtonDown(button byte) error {
 	d.mouseButtons |= button
 	return d.sendRelativeMouseReport(0, 0, 0, 0)
@@ -428,12 +434,12 @@ func fillControlReport(dst *[65]byte, inner []byte) {
 }
 
 // sendKeyboardReport writes a keyboard input report into the device's
-// reusable report buffer and injects it via the control report. It performs no
+// keyboard report buffer and injects it via the control report. It performs no
 // heap allocation.
 func (d *FakerInputDevice) sendKeyboardReport(modifiers byte, keys [fakerInputKeyCodeCount]byte) error {
 	var inner [fakerInputKeyboardReportSize]byte
 	fillKeyboardReport(&inner, modifiers, keys)
-	return d.sendControlReport(inner[:])
+	return d.sendControlReport(inner[:], &d.kbdReportBuf)
 }
 
 // fillRelativeMouseReport assembles a FakerInput relative mouse input report
@@ -475,16 +481,16 @@ func fillAbsoluteMouseReport(dst *[fakerInputAbsoluteMouseReportSize]byte, butto
 }
 
 // sendControlReport wraps inner in the 65-byte control output report and writes
-// it to the device. It is the single injection path shared by keyboard and
-// mouse reports.
-func (d *FakerInputDevice) sendControlReport(inner []byte) error {
+// it to the device using the given per-stream report buffer. It is the single
+// injection path shared by keyboard and mouse reports.
+func (d *FakerInputDevice) sendControlReport(inner []byte, buf *[65]byte) error {
 	if d == nil || d.handle == windows.InvalidHandle {
 		return errors.New("FakerInput device is not open")
 	}
-	fillControlReport(&d.reportBuf, inner)
+	fillControlReport(buf, inner)
 
 	var written uint32
-	if err := windows.WriteFile(d.handle, d.reportBuf[:], &written, nil); err != nil {
+	if err := windows.WriteFile(d.handle, buf[:], &written, nil); err != nil {
 		return fmt.Errorf("write FakerInput control report: %w", err)
 	}
 	return nil
@@ -495,7 +501,7 @@ func (d *FakerInputDevice) sendControlReport(inner []byte) error {
 func (d *FakerInputDevice) sendRelativeMouseReport(dx, dy int16, wheel, hwheel int8) error {
 	var inner [fakerInputRelativeMouseReportSize]byte
 	fillRelativeMouseReport(&inner, d.mouseButtons, dx, dy, wheel, hwheel)
-	return d.sendControlReport(inner[:])
+	return d.sendControlReport(inner[:], &d.mouseReportBuf)
 }
 
 // sendAbsoluteMouseReport writes an absolute mouse report carrying the current
@@ -503,7 +509,7 @@ func (d *FakerInputDevice) sendRelativeMouseReport(dx, dy int16, wheel, hwheel i
 func (d *FakerInputDevice) sendAbsoluteMouseReport(x, y uint16, wheel int8) error {
 	var inner [fakerInputAbsoluteMouseReportSize]byte
 	fillAbsoluteMouseReport(&inner, d.mouseButtons, x, y, wheel)
-	return d.sendControlReport(inner[:])
+	return d.sendControlReport(inner[:], &d.mouseReportBuf)
 }
 
 func putUint32LE(b []byte, v uint32) {
@@ -511,4 +517,35 @@ func putUint32LE(b []byte, v uint32) {
 	b[1] = byte(v >> 8)
 	b[2] = byte(v >> 16)
 	b[3] = byte(v >> 24)
+}
+
+// FakerInputMouseButton maps a backend-neutral MouseButton to a FakerInput
+// mouse button bit.
+func FakerInputMouseButton(b MouseButton) (byte, error) {
+	switch b {
+	case MouseButtonLeft:
+		return fakerInputMouseButtonLeft, nil
+	case MouseButtonRight:
+		return fakerInputMouseButtonRight, nil
+	case MouseButtonMiddle:
+		return fakerInputMouseButtonMiddle, nil
+	case MouseButtonX1:
+		return fakerInputMouseButtonX1, nil
+	case MouseButtonX2:
+		return fakerInputMouseButtonX2, nil
+	default:
+		return 0, fmt.Errorf("unknown mouse button %d", b)
+	}
+}
+
+// FakerInputAbsCoordinate scales a normalized 0..10000 absolute coordinate to
+// FakerInput's 0..32767 absolute range, clamping out-of-range inputs.
+func FakerInputAbsCoordinate(v int32) uint16 {
+	if v < 0 {
+		v = 0
+	}
+	if v > 10000 {
+		v = 10000
+	}
+	return uint16(int64(v) * 32767 / 10000)
 }

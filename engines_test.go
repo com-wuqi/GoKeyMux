@@ -92,3 +92,82 @@ func TestEngineApplyUnsupportedDrive(t *testing.T) {
 		t.Fatal("expected error for unsupported drive")
 	}
 }
+
+func TestEngineConcurrentMouseKeyboardNoop(t *testing.T) {
+	e := newNoopTestEngine(t)
+
+	const n = 1000
+	var wg sync.WaitGroup
+	for range n {
+		wg.Add(4)
+		go func() {
+			defer wg.Done()
+			if err := e.EnginePress(context.Background(), KeyCodes{}); err != nil {
+				t.Errorf("press: %v", err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if err := e.EngineRelease(context.Background(), KeyCodes{}); err != nil {
+				t.Errorf("release: %v", err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if err := e.EngineMouseMove(context.Background(), 1, 2); err != nil {
+				t.Errorf("mouse move: %v", err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if err := e.EngineMouseButtonDown(context.Background(), MouseButtonLeft); err != nil {
+				t.Errorf("mouse down: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	dev, ok := e.driveClient.(*NoopDevice)
+	if !ok {
+		t.Fatalf("driveClient is not *NoopDevice, got %T", e.driveClient)
+	}
+	press, release := dev.Stats()
+	if press != n || release != n {
+		t.Fatalf("press=%d release=%d, want %d/%d", press, release, n, n)
+	}
+	move, _, buttonDown, _, _, _ := dev.MouseStats()
+	if move != n || buttonDown != n {
+		t.Fatalf("mouse move=%d buttonDown=%d, want %d/%d", move, buttonDown, n, n)
+	}
+}
+
+func TestEngineMouseApplyUnsupportedDrive(t *testing.T) {
+	prev := GlobalConfig.EnabledDriveName
+	t.Cleanup(func() { GlobalConfig.EnabledDriveName = prev })
+
+	e := NewEngine()
+	for _, drive := range []DriveName{DriveWinputWithWindow, DriveWinputWithInterception} {
+		GlobalConfig.EnabledDriveName = drive
+		if err := e.applyMouse(context.Background(), mouseEvent{kind: mouseEventMoveRel, dx: 1, dy: 1}); err == nil {
+			t.Errorf("expected error for drive %s", drive)
+		}
+	}
+}
+
+func TestFakerInputAbsCoordinate(t *testing.T) {
+	cases := []struct {
+		in   int32
+		want uint16
+	}{
+		{0, 0},
+		{10000, 32767},
+		{5000, 16383},
+		{-1, 0},
+		{10001, 32767},
+	}
+	for _, c := range cases {
+		if got := FakerInputAbsCoordinate(c.in); got != c.want {
+			t.Errorf("FakerInputAbsCoordinate(%d) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}

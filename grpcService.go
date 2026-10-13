@@ -111,6 +111,21 @@ func (s *GoKeyMuxService) dispatch(ctx context.Context, key string, isRune bool,
 	return s.engine.EngineRelease(ctx, keys...)
 }
 
+func (s *GoKeyMuxService) MouseService(stream pb.RpcKeyService_MouseServiceServer) error {
+	var isAllDone bool
+	isAllDone = true
+	for {
+		_, err := stream.Recv()
+		if err == io.EOF {
+			return stream.SendAndClose(&pb.MouseReturn{IsAllDone: isAllDone, MetaData: time.Now().String()})
+		}
+		if err != nil {
+			return err
+		}
+		return stream.SendAndClose(&pb.MouseReturn{IsAllDone: isAllDone, MetaData: time.Now().String()})
+	}
+}
+
 // logLevelForCode maps a gRPC status code to the slog level used for the
 // request/stream log line. Successful calls are debug-level, so they only show
 // when the configured log level is debug.
