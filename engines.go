@@ -474,7 +474,7 @@ func (e *Engine) applyMouse(ctx context.Context, ev mouseEvent) error {
 			}
 			switch ev.kind {
 			case mouseEventMoveRel:
-				return client.MouseMove(int16(ev.dx), int16(ev.dy))
+				return client.MouseMove(FakerInputRelDelta(ev.dx), FakerInputRelDelta(ev.dy))
 			case mouseEventMoveAbs:
 				return client.MouseMoveTo(FakerInputAbsCoordinate(ev.x), FakerInputAbsCoordinate(ev.y))
 			case mouseEventButton:

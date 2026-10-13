@@ -171,3 +171,25 @@ func TestFakerInputAbsCoordinate(t *testing.T) {
 		}
 	}
 }
+
+func TestFakerInputRelDelta(t *testing.T) {
+	cases := []struct {
+		in   int32
+		want int16
+	}{
+		{0, 0},
+		{1, 1},
+		{-1, -1},
+		{32767, 32767},
+		{-32767, -32767},
+		{32768, 32767},
+		{-32768, -32767},
+		{40000, 32767},
+		{-40000, -32767},
+	}
+	for _, c := range cases {
+		if got := FakerInputRelDelta(c.in); got != c.want {
+			t.Errorf("FakerInputRelDelta(%d) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}

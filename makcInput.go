@@ -64,7 +64,10 @@ func MakcMouseButton(b MouseButton) (makc.MouseButton, error) {
 	}
 }
 
-// MakcAbsCoordinate scales a normalized 0..10000 coordinate to screen pixels.
+// MakcAbsCoordinate scales a normalized 0..10000 coordinate to screen pixels,
+// mapping onto the inclusive pixel range [0, screenSize-1] so that 10000 lands
+// on the last valid pixel (screenSize-1). This mirrors FakerInput's absolute
+// range, where its logical maximum (32767) equals the screen's bottom/right edge.
 func MakcAbsCoordinate(v int32, screenSize int) int {
 	if v < 0 {
 		v = 0
@@ -72,7 +75,10 @@ func MakcAbsCoordinate(v int32, screenSize int) int {
 	if v > 10000 {
 		v = 10000
 	}
-	return int(int64(v) * int64(screenSize) / 10000)
+	if screenSize <= 1 {
+		return 0
+	}
+	return int(int64(v) * int64(screenSize-1) / 10000)
 }
 
 func MakcInputMouseMove(client *makc.Client, dx, dy int32, ctx context.Context) error {

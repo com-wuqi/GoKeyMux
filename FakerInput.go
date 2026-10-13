@@ -549,3 +549,17 @@ func FakerInputAbsCoordinate(v int32) uint16 {
 	}
 	return uint16(int64(v) * 32767 / 10000)
 }
+
+// FakerInputRelDelta clamps a relative pixel delta to the FakerInput relative
+// mouse logical range -32767..32767 (see the report descriptor Logical Min/Max
+// in FakerInput/Device.c). Values outside that range would otherwise be
+// truncated by an int16 conversion and reverse direction.
+func FakerInputRelDelta(v int32) int16 {
+	if v < -32767 {
+		v = -32767
+	}
+	if v > 32767 {
+		v = 32767
+	}
+	return int16(v)
+}

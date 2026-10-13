@@ -39,10 +39,10 @@ func TestMakcAbsCoordinate(t *testing.T) {
 		want int
 	}{
 		{0, 0},
-		{10000, size},
-		{5000, size / 2},
+		{10000, size - 1},
+		{5000, (size - 1) / 2},
 		{-1, 0},
-		{10001, size},
+		{10001, size - 1},
 	}
 	for _, c := range cases {
 		if got := MakcAbsCoordinate(c.in, size); got != c.want {
