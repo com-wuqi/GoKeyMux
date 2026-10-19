@@ -115,14 +115,104 @@ func (s *GoKeyMuxService) MouseService(stream pb.RpcKeyService_MouseServiceServe
 	var isAllDone bool
 	isAllDone = true
 	for {
-		_, err := stream.Recv()
+		req, err := stream.Recv()
 		if err == io.EOF {
 			return stream.SendAndClose(&pb.MouseReturn{IsAllDone: isAllDone, MetaData: time.Now().String()})
 		}
 		if err != nil {
 			return err
 		}
-		return stream.SendAndClose(&pb.MouseReturn{IsAllDone: isAllDone, MetaData: time.Now().String()})
+		switch req.GetType() {
+		case pb.MouseEvent_UNKNOWN:
+			{
+				slog.Default().LogAttrs(stream.Context(), slog.LevelInfo, "unknown mouse event")
+			}
+		case pb.MouseEvent_MOVE:
+			{
+				if err = s.engine.EngineMouseMove(stream.Context(), req.GetX(), req.GetY()); err != nil {
+					slog.Default().LogAttrs(
+						stream.Context(), slog.LevelError, "MouseEvent_MOVE failed",
+						slog.String("err", err.Error()),
+					)
+				}
+			}
+		case pb.MouseEvent_ABS_MOVE:
+			{
+				if err = s.engine.EngineMouseMoveTo(stream.Context(), req.GetX(), req.GetY()); err != nil {
+					slog.Default().LogAttrs(
+						stream.Context(), slog.LevelError, "MouseEvent_ABS_MOVE failed",
+						slog.String("err", err.Error()),
+					)
+				}
+			}
+		case pb.MouseEvent_SCROLL:
+			{
+				if err = s.engine.EngineMouseWheel(stream.Context(), req.GetScrollDelta()); err != nil {
+					slog.Default().LogAttrs(
+						stream.Context(), slog.LevelError, "MouseEvent_SCROLL failed",
+						slog.String("err", err.Error()),
+					)
+				}
+			}
+		case pb.MouseEvent_LEFT_UP:
+			{
+				if err = s.engine.EngineMouseButtonUp(stream.Context(), MouseButtonLeft); err != nil {
+					slog.Default().LogAttrs(
+						stream.Context(), slog.LevelError, "MouseEvent_LEFT_UP failed",
+						slog.String("err", err.Error()),
+					)
+				}
+			}
+		case pb.MouseEvent_LEFT_DOWN:
+			{
+				if err = s.engine.EngineMouseButtonDown(stream.Context(), MouseButtonLeft); err != nil {
+					slog.Default().LogAttrs(
+						stream.Context(), slog.LevelError, "MouseEvent_LEFT_DOWN failed",
+						slog.String("err", err.Error()),
+					)
+				}
+			}
+		case pb.MouseEvent_RIGHT_UP:
+			{
+				if err = s.engine.EngineMouseButtonUp(stream.Context(), MouseButtonRight); err != nil {
+					slog.Default().LogAttrs(
+						stream.Context(), slog.LevelError, "MouseEvent_RIGHT_UP failed",
+						slog.String("err", err.Error()),
+					)
+				}
+			}
+		case pb.MouseEvent_RIGHT_DOWN:
+			{
+				if err = s.engine.EngineMouseButtonDown(stream.Context(), MouseButtonRight); err != nil {
+					slog.Default().LogAttrs(
+						stream.Context(), slog.LevelError, "MouseEvent_RIGHT_DOWN failed",
+						slog.String("err", err.Error()),
+					)
+				}
+			}
+		case pb.MouseEvent_MIDDLE_UP:
+			{
+				if err = s.engine.EngineMouseButtonUp(stream.Context(), MouseButtonMiddle); err != nil {
+					slog.Default().LogAttrs(
+						stream.Context(), slog.LevelError, "MouseEvent_MIDDLE_UP failed",
+						slog.String("err", err.Error()),
+					)
+				}
+			}
+		case pb.MouseEvent_MIDDLE_DOWN:
+			{
+				if err = s.engine.EngineMouseButtonDown(stream.Context(), MouseButtonMiddle); err != nil {
+					slog.Default().LogAttrs(
+						stream.Context(), slog.LevelError, "MouseEvent_MIDDLE_DOWN failed",
+						slog.String("err", err.Error()),
+					)
+				}
+			}
+		default:
+			slog.Default().LogAttrs(stream.Context(), slog.LevelWarn, "unknown mouse event",
+				slog.String("type", req.GetType().String()),
+			)
+		}
 	}
 }
 

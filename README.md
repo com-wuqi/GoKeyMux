@@ -1,7 +1,8 @@
 # GoKeyMux
 
-GoKeyMux 是一个运行在 **Windows** 上的按键注入服务（键盘输入多路复用器）。它通过 gRPC 暴露接口，接收“按键按下 /
-释放”请求，并转发到可插拔的输入注入后端。其目标是统一多种按键注入方案（驱动 / 虚拟 HID / 窗口消息）为同一个接口，方便游戏自动化等本机场景。
+GoKeyMux 是一个运行在 **Windows** 上的输入注入服务（键盘 / 鼠标输入多路复用器）。它通过 gRPC 暴露接口，接收“按键按下 /
+释放”与鼠标事件请求，并转发到可插拔的输入注入后端。其目标是统一多种输入注入方案（驱动 / 虚拟 HID /
+窗口消息）为同一个接口，方便游戏自动化等本机场景。
 
 > [!WARNING]
 > **仅限本机使用 (Local Use Only)**  
@@ -28,7 +29,7 @@ IP。若监听地址不是回环地址，服务启动时会打印警告。将服
 
 ## 特性
 
-- **gRPC 服务**：提供客户端流式 `keyService` 与一元 `keyServiceDebug` 两个 RPC。
+- **gRPC 服务**：提供客户端流式 `keyService`、`MouseService` 与一元 `keyServiceDebug` 三个 RPC。
 - **可插拔后端**：内置 5 种输入注入后端，通过配置切换。
 - **统一按键映射**：一套逻辑按键同时映射三种编码（Windows 虚拟键码 / Interception 扫描码 / USB HID 键码）。
 - **服务治理**：健康检查、keepalive 策略、请求日志拦截器、pprof 性能分析。
@@ -52,9 +53,9 @@ IP。若监听地址不是回环地址，服务启动时会打印警告。将服
 - **操作系统**：Windows（仅支持 x86 / x64，ARM64 不支持）。
 - **Go**：1.27 或更高版本（见 `go.mod`）。
 - **按后端可选依赖**：
-    - `winputWithInterception`：安装 Interception 驱动。直接运行
-      `Interception\command line installer\install-interception.exe`（不带参数）即可查看帮助信息，
-      并按提示完成安装；无需移动或改动 `Interception` 目录。
+    - `winputWithInterception`：安装 Interception 驱动。以 **管理员身份**打开 cmd，运行
+      `Interception\command line installer\install-interception.exe /install` 即可完成安装
+      （`/uninstall` 卸载；不带参数运行可查看帮助信息）；无需移动或改动 `Interception` 目录。
     - `fakerInput`：安装 FakerInput 虚拟 HID 设备，运行
       `FakerInput_Setup_0.1.1_x64.msi`。
     - `winputWithWindow`：需要目标进程在运行（默认查找进程名 `Game.exe`）。
@@ -153,11 +154,27 @@ go build -o loadtest.exe ./cmd/loadtest
 
 ### 演示客户端 `keycycle`
 
-循环按下并释放 a-z，用于快速验证链路：
+依次执行三组测试，用于快速验证链路：
+
+1. **a-z 循环**：按 `-cycles` 轮数循环按下并释放 a-z。
+2. **命名键测试**：逐个按下/释放 `-keys` 指定的键名（`isRune=false`）。
+3. **鼠标测试**：发送一组鼠标事件（相对移动、左/中/右键点击、滚轮、绝对移动）。
 
 ```powershell
-.\keycycle.exe -addr localhost:50051 -interval 5s
+.\keycycle.exe -addr localhost:50051 -interval 5s -cycles 5 `
+  -keys "space,enter,tab,escape,backspace,up,down,left,right" -keyDelay 300ms -mouseDelay 300ms
 ```
+
+常用参数：
+
+| 参数          | 默认值                                                | 说明                                           |
+|---------------|-------------------------------------------------------|------------------------------------------------|
+| `-addr`       | `localhost:50051`                                     | 服务端地址                                     |
+| `-interval`   | `5s`                                                  | a-z 每轮循环之间的间隔                         |
+| `-cycles`     | `5`                                                   | a-z 循环轮数                                   |
+| `-keys`       | `space,enter,tab,escape,backspace,up,down,left,right` | 命名键测试的逗号分隔键名列表（`isRune=false`） |
+| `-keyDelay`   | `300ms`                                               | 命名键事件之间的延时                           |
+| `-mouseDelay` | `300ms`                                               | 鼠标事件之间的延时                             |
 
 ### 压测客户端 `loadtest`
 
@@ -190,12 +207,15 @@ go build -o loadtest.exe ./cmd/loadtest
 service rpcKeyService {
   rpc keyService (stream keyInput) returns (keyReturn);
   rpc keyServiceDebug (keyInputDebug) returns (keyReturnDebug);
+  rpc MouseService (stream MouseEvent) returns (MouseReturn);
 }
 ```
 
 - `keyService`： **客户端流式**。客户端持续发送 `keyInput`，服务端逐个派发；流结束时返回 `keyReturn`，其中 `isAllDone` 为
   `true` 表示全程无派发错误。
 - `keyServiceDebug`： **一元**，用于单次调试调用。
+- `MouseService`： **客户端流式**。客户端持续发送 `MouseEvent`，服务端逐个派发；流结束时返回 `MouseReturn`，其中
+  `isAllDone` 为 `true` 表示全程无派发错误。
 
 `keyInput` 字段：
 
@@ -204,6 +224,33 @@ service rpcKeyService {
 | `key`       | string | 键名（`isRune=false`）或 rune 字符串（`isRune=true`） |
 | `isRune`    | bool   | 是否将 `key` 解释为 rune 字符串                       |
 | `isPressed` | bool   | `true` 按下，`false` 释放                             |
+
+`MouseEvent` 字段：
+
+| 字段           | 类型  | 说明                                                                             |
+|----------------|-------|----------------------------------------------------------------------------------|
+| `type`         | enum  | 事件类型，取值见下表                                                             |
+| `x`            | int32 | `MOVE` 时为相对移动像素增量；`ABS_MOVE` 时为归一化绝对坐标 0~10000；其余类型为 0 |
+| `y`            | int32 | 同上，Y 轴                                                                       |
+| `scroll_delta` | int32 | 滚轮增量，仅 `SCROLL` 有效；正数向上/向前，负数向下/向后                         |
+
+`MouseEvent.type` 取值：
+
+| 取值          | 说明                                     |
+|---------------|------------------------------------------|
+| `MOVE`        | 相对移动（`x`/`y` 为像素增量）           |
+| `ABS_MOVE`    | 绝对移动（`x`/`y` 为归一化坐标 0~10000） |
+| `LEFT_DOWN`   | 左键按下                                 |
+| `LEFT_UP`     | 左键抬起                                 |
+| `RIGHT_DOWN`  | 右键按下                                 |
+| `RIGHT_UP`    | 右键抬起                                 |
+| `MIDDLE_DOWN` | 中键按下                                 |
+| `MIDDLE_UP`   | 中键抬起                                 |
+| `SCROLL`      | 滚轮（使用 `scroll_delta`）              |
+| `UNKNOWN`     | 未定义，忽略                             |
+
+> 注意：鼠标注入仅 `makc`、`fakerInput`、`noop` 后端支持；`winputWithWindow` 与 `winputWithInterception`
+> 后端不支持鼠标，会返回 "mouse not implemented" 错误。
 
 ## 按键与 rune 约定
 
@@ -294,11 +341,12 @@ GoKeyMux-windows-386.zip
 │   └── gokeymux{,_grpc}.pb.go     # 生成的 protobuf / gRPC 桩代码
 ├── cmd/
 │   ├── loadtest/main.go           # 压测客户端
-│   └── keycycle/main.go           # a-z 循环演示客户端
+│   └── keycycle/main.go           # 按键 / 鼠标演示客户端
 ├── .github/workflows/             # GitHub Actions：CI 与发布
 │   ├── ci.yml                     # 主分支校验（vet / test / build）
 │   └── release.yml                # tag 或手动触发的发布构建
 ├── Interception/                  # Interception 驱动库与许可证
+├── FakerInput/                    # FakerInput 驱动源码（上游 Ryochan7/FakerInput）
 ├── FakerInput_Setup_0.1.1_x64.msi # FakerInput 虚拟设备安装包
 ├── LICENSE                        # MIT
 └── THIRD_PARTY_NOTICES            # 第三方依赖与捆绑组件许可说明
@@ -311,4 +359,4 @@ GoKeyMux-windows-386.zip
 本项目捆绑/依赖的部分第三方组件有其独立许可，详见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES)：
 
 - **Interception**（键盘驱动）：非商业用途遵循 LGPL 3.0，商业用途需另行获取商业许可。
-- **FakerInput**：以厂商许可条款为准，重新分发前请确认。
+- **FakerInput**（驱动源码与安装包）：遵循 MIT 许可（Copyright (c) 2021 Travis Nickles）。

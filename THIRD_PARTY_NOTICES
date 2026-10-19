@@ -44,7 +44,7 @@ Copyright (c) 2018 The Go Authors.
 ### google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa
 License: Apache License 2.0
 
-## Bundled third-party binaries
+## Bundled third-party components
 
 ### Interception (keyboard driver)
 Located under `Interception/`.
@@ -55,7 +55,13 @@ Located under `Interception/`.
   See `Interception/licenses/commercial-usage/`.
 
 ### FakerInput
-`FakerInput_Setup_0.1.1_x64.msi`
 
-License terms are provided by the vendor. Review its terms before
-redistribution.
+Driver source located under `FakerInput/`, copied from
+https://github.com/Ryochan7/FakerInput. The FakerInput mouse report
+handling in `FakerInput.go` is derived from the same project.
+
+Installer: `FakerInput_Setup_0.1.1_x64.msi`, from the upstream v0.1.1
+x64 release.
+
+License: MIT
+Copyright (c) 2021 Travis Nickles
