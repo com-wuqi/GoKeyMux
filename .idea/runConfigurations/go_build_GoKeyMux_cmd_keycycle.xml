@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="go build GoKeyMux/cmd/keycycle" type="GoApplicationRunConfiguration" factoryName="Go Application" nameIsGenerated="true">
+    <module name="GoKeyMux" />
+    <working_directory value="$PROJECT_DIR$" />
+    <kind value="PACKAGE" />
+    <package value="GoKeyMux/cmd/keycycle" />
+    <directory value="$PROJECT_DIR$" />
+    <output_directory value="$PROJECT_DIR$" />
+    <auto_managed_config_id value="$PROJECT_DIR$/cmd/keycycle" />
+    <method v="2" />
+  </configuration>
+</component>
