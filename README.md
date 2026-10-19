@@ -32,6 +32,7 @@ IP。若监听地址不是回环地址，服务启动时会打印警告。将服
 - **gRPC 服务**：提供客户端流式 `keyService`、`MouseService` 与一元 `keyServiceDebug` 三个 RPC。
 - **可插拔后端**：内置 5 种输入注入后端，通过配置切换。
 - **统一按键映射**：一套逻辑按键同时映射三种编码（Windows 虚拟键码 / Interception 扫描码 / USB HID 键码）。
+- **安全退出**：正常退出时自动释放所有仍按下的键盘键与鼠标按钮，避免残留卡键。
 - **服务治理**：健康检查、keepalive 策略、请求日志拦截器、pprof 性能分析。
 - **配置驱动**：运行期通过 `config.json` 配置（缺失时自动生成默认配置）。
 - **配套工具**：`loadtest` 压测客户端与 `keycycle` 演示客户端。
@@ -151,6 +152,9 @@ go build -o loadtest.exe ./cmd/loadtest
 ```
 
 启动后即可通过 gRPC 客户端（Go / Python / C# 等任意语言，按 `proto/gokeymux.proto` 生成桩代码）调用。
+
+> 正常退出（Ctrl+C / SIGTERM / 服务停止）会自动释放所有仍按下的键盘键和鼠标按钮。强制结束进程（任务管理器 /
+> `taskkill`）或直接关闭控制台窗口不会执行清理，可能残留卡键。
 
 ### 演示客户端 `keycycle`
 

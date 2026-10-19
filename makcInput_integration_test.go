@@ -178,3 +178,72 @@ func TestMakcInputSendInputIntegration(t *testing.T) {
 
 	t.Log("makc SendInput integration OK")
 }
+
+// TestMakcReleaseMatchesHeldKeyIntegration is the real-backend counterpart of
+// TestEngineReleaseUsesHeldModifiers. It presses "shift" and releases "lshift":
+// both are the same physical modifier (same modifier flag) but carry different
+// makc.Key values, so an exact KeyCodes match would leave the press tracked.
+// The test asserts the engine's held state is cleared and the key is physically
+// released. It uses the SendInput backend because GetAsyncKeyState can observe
+// it, unlike the default InjectKeyboardInput backend.
+func TestMakcReleaseMatchesHeldKeyIntegration(t *testing.T) {
+	ctx := context.Background()
+
+	client, err := makc.Open(makc.WithKeyboardInjection(makc.KeyboardInjectionSendInput))
+	if err != nil {
+		t.Skipf("makc SendInput backend unavailable: %v", err)
+	}
+
+	prevQueue := GlobalConfig.DispatchQueueSize
+	GlobalConfig.DispatchQueueSize = 8
+	t.Cleanup(func() { GlobalConfig.DispatchQueueSize = prevQueue })
+
+	// Build the engine around the explicit SendInput client instead of calling
+	// StartEngine, which would open its own auto-selected client.
+	e := NewEngine()
+	e.driveName = DriveMakc
+	e.driveClient = client
+	e.wg.Add(2)
+	go e.run()
+	go e.runMouse()
+	t.Cleanup(func() { _ = e.CloseEngine() })
+
+	pressed, ok := KeyCodesFromName("shift")
+	if !ok {
+		t.Fatal("KeyCodesFromName(shift) failed")
+	}
+	released, ok := KeyCodesFromName("lshift")
+	if !ok {
+		t.Fatal("KeyCodesFromName(lshift) failed")
+	}
+	t.Logf("keyboard backend=%s", client.Keyboard.InjectionBackend())
+	t.Logf("pressed=%+v", pressed)
+	t.Logf("released=%+v", released)
+
+	if err := e.EnginePress(ctx, pressed); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if down, err := client.Keyboard.Down(ctx, pressed.Makc); err != nil || !down {
+		t.Fatalf("key not down after press: down=%v err=%v", down, err)
+	}
+	if len(e.heldKeys) != 1 {
+		t.Fatalf("held after press = %v, want exactly one key", e.heldKeys)
+	}
+	t.Logf("held after press: %v", e.heldKeys)
+
+	if err := e.EngineRelease(ctx, released); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	t.Logf("held after release: %v", e.heldKeys)
+	if len(e.heldKeys) != 0 {
+		t.Fatalf("held after release = %v, want empty", e.heldKeys)
+	}
+	if down, err := client.Keyboard.Down(ctx, pressed.Makc); err != nil || down {
+		t.Fatalf("key still down after release: down=%v err=%v", down, err)
+	}
+	t.Logf("held before CloseEngine: %v", e.heldKeys)
+	if err := e.CloseEngine(); err != nil {
+		t.Fatalf("CloseEngine: %v", err)
+	}
+	t.Log("held state cleared, key physically released, and shutdown had nothing to release")
+}

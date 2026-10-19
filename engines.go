@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aiwaki/makc"
@@ -15,6 +17,10 @@ import (
 // defaultDispatchQueueSize is used when the configured dispatchQueueSize is
 // not positive (e.g. an older config.json that predates the field).
 const defaultDispatchQueueSize = 1024
+
+// ErrEngineClosed is returned when a request is submitted after CloseEngine has
+// started shutting the engine down.
+var ErrEngineClosed = errors.New("engine closed")
 
 // keyOp is a single key injection request submitted to the engine worker.
 type keyOp struct {
@@ -80,6 +86,10 @@ type mouseOp struct {
 
 type Engine struct {
 	driveClient any
+	// driveName is captured at StartEngine time. Using it instead of reading
+	// GlobalConfig at dispatch/close time keeps the whole lifecycle bound to a
+	// single backend even if the global config is mutated later.
+	driveName DriveName
 
 	// ops is the serialization point for key injection; mouseOps is the
 	// independent serialization point for mouse injection. Keyboard and mouse
@@ -91,6 +101,27 @@ type Engine struct {
 	mouseOps chan mouseOp
 	done     chan struct{}
 	wg       sync.WaitGroup
+
+	// closing is set before done is closed. Submitters check it first, so a
+	// request arriving after shutdown starts fails fast instead of racing the
+	// queue drain. Ordering is handled by the shutdown sequence in main (the
+	// engine stops accepting work before gRPC is stopped), which keeps the
+	// queue quiescent without a hot-path lock.
+	closing atomic.Bool
+
+	closeOnce sync.Once
+	closeErr  error
+
+	// Held input state. The key fields are only read/written by the keyboard
+	// worker; the button fields only by the mouse worker. They are used to
+	// release everything still down when the engine shuts down. Keeping state
+	// here (rather than querying the backend) is essential: backend state
+	// queries such as makc's KeyState reflect physical keys too, so releasing
+	// based on them could release keys the user is holding.
+	heldKeys      []KeyCodes
+	heldKeySet    map[KeyCodes]struct{}
+	heldButtons   []MouseButton
+	heldButtonSet map[MouseButton]struct{}
 }
 
 func NewEngine() *Engine {
@@ -99,15 +130,18 @@ func NewEngine() *Engine {
 		size = defaultDispatchQueueSize
 	}
 	return &Engine{
-		driveClient: nil,
-		ops:         make(chan keyOp, size),
-		mouseOps:    make(chan mouseOp, size),
-		done:        make(chan struct{}),
+		driveClient:   nil,
+		ops:           make(chan keyOp, size),
+		mouseOps:      make(chan mouseOp, size),
+		done:          make(chan struct{}),
+		heldKeySet:    make(map[KeyCodes]struct{}),
+		heldButtonSet: make(map[MouseButton]struct{}),
 	}
 }
 
 func (e *Engine) StartEngine() error {
-	switch GlobalConfig.EnabledDriveName {
+	e.driveName = GlobalConfig.EnabledDriveName
+	switch e.driveName {
 	case DriveMakc:
 		{
 			client, err := MakcInputInit()
@@ -160,40 +194,60 @@ func (e *Engine) StartEngine() error {
 	return nil
 }
 
+// CloseEngine stops the workers and closes the backend. Before the backend is
+// closed, any requests still queued are drained and every key/mouse button that
+// is still held is released, so a graceful shutdown never leaves a key stuck
+// down. It is safe to call CloseEngine more than once and from multiple
+// goroutines.
 func (e *Engine) CloseEngine() error {
-	var err error
-	switch GlobalConfig.EnabledDriveName {
-	case DriveMakc:
-		{
-			if client, ok := e.driveClient.(*makc.Client); ok {
-				err = client.Close()
-			} else {
-				err = fmt.Errorf("drive is not ‘*make.Client’")
-			}
-		}
-	case DriveFakerInput:
-		{
-			if client, ok := e.driveClient.(*FakerInputDevice); ok {
-				err = client.Close()
-			} else {
-				err = fmt.Errorf("drive is not '*FakerInputDevice'")
-			}
-		}
-	case DriveWinputWithWindow, DriveWinputWithInterception:
-		{
-			err = nil
-		}
-	case DriveNoop:
-		{
-			err = nil
-		}
-	default:
-		err = fmt.Errorf("unsupported drive %s", GlobalConfig.EnabledDriveName)
-	}
+	e.closeOnce.Do(func() {
+		// Reject new requests before closing done. A submit that read the old
+		// value just before this store may still enqueue one op, but that op is
+		// never consumed: the caller gets ErrEngineClosed and the held-input
+		// cleanup below still guarantees no key is left down.
+		e.closing.Store(true)
+		close(e.done)
 
-	close(e.done)
-	e.wg.Wait()
-	return err
+		// The workers drain pending ops and release held input before they
+		// return, so waiting here ensures the backend is no longer in use.
+		e.wg.Wait()
+
+		switch e.driveName {
+		case DriveMakc:
+			{
+				if client, ok := e.driveClient.(*makc.Client); ok {
+					e.closeErr = client.Close()
+				} else if e.driveClient != nil {
+					e.closeErr = fmt.Errorf("drive is not '*makc.Client'")
+				}
+			}
+		case DriveFakerInput:
+			{
+				if client, ok := e.driveClient.(*FakerInputDevice); ok {
+					e.closeErr = client.Close()
+				} else if e.driveClient != nil {
+					e.closeErr = fmt.Errorf("drive is not '*FakerInputDevice'")
+				}
+			}
+		case DriveWinputWithWindow, DriveWinputWithInterception:
+			{
+				e.closeErr = nil
+			}
+		case DriveNoop:
+			{
+				if client, ok := e.driveClient.(*NoopDevice); ok {
+					e.closeErr = client.Close()
+				} else if e.driveClient != nil {
+					e.closeErr = fmt.Errorf("drive is not '*NoopDevice'")
+				}
+			}
+		default:
+			if e.driveName != "" {
+				e.closeErr = fmt.Errorf("unsupported drive %s", e.driveName)
+			}
+		}
+	})
+	return e.closeErr
 }
 
 // run is the single worker that drains the request queue. Because only this
@@ -207,18 +261,26 @@ func (e *Engine) run() {
 			op.resp <- e.apply(op.ctx, op.keys, op.isPressed)
 		case <-e.done:
 			e.drain()
+			e.releaseHeldKeys()
 			return
 		}
 	}
 }
 
 // drain flushes any requests still queued at shutdown so no release event is
-// dropped (which could otherwise leave a key stuck in the down state).
+// dropped (which could otherwise leave a key stuck in the down state). A
+// release is always applied with a detached context: the request's context may
+// already be canceled (for example because the client stream was aborted), but
+// skipping the release would leave the key down.
 func (e *Engine) drain() {
 	for {
 		select {
 		case op := <-e.ops:
-			op.resp <- e.apply(op.ctx, op.keys, op.isPressed)
+			ctx := op.ctx
+			if !op.isPressed {
+				ctx = context.Background()
+			}
+			op.resp <- e.apply(ctx, op.keys, op.isPressed)
 		default:
 			return
 		}
@@ -236,17 +298,23 @@ func (e *Engine) runMouse() {
 			op.resp <- e.applyMouse(op.ctx, op.ev)
 		case <-e.done:
 			e.drainMouse()
+			e.releaseHeldButtons()
 			return
 		}
 	}
 }
 
-// drainMouse flushes any mouse requests still queued at shutdown.
+// drainMouse flushes any mouse requests still queued at shutdown. Button
+// releases use a detached context for the same reason as in drain.
 func (e *Engine) drainMouse() {
 	for {
 		select {
 		case op := <-e.mouseOps:
-			op.resp <- e.applyMouse(op.ctx, op.ev)
+			ctx := op.ctx
+			if op.ev.kind == mouseEventButton && !op.ev.isPressed {
+				ctx = context.Background()
+			}
+			op.resp <- e.applyMouse(ctx, op.ev)
 		default:
 			return
 		}
@@ -299,12 +367,15 @@ func (e *Engine) submitMouse(ctx context.Context, ev mouseEvent) error {
 		return err
 	}
 	op := mouseOp{ctx: ctx, ev: ev, resp: make(chan error, 1)}
+	if e.closing.Load() {
+		return ErrEngineClosed
+	}
 	select {
 	case e.mouseOps <- op:
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-e.done:
-		return errors.New("ctx done")
+		return ErrEngineClosed
 	}
 	select {
 	case err := <-op.resp:
@@ -312,7 +383,7 @@ func (e *Engine) submitMouse(ctx context.Context, ev mouseEvent) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-e.done:
-		return errors.New("ctx done")
+		return ErrEngineClosed
 	}
 }
 
@@ -324,12 +395,15 @@ func (e *Engine) submit(ctx context.Context, isPressed bool, keys []KeyCodes) er
 		return err
 	}
 	op := keyOp{ctx: ctx, isPressed: isPressed, keys: keys, resp: make(chan error, 1)}
+	if e.closing.Load() {
+		return ErrEngineClosed
+	}
 	select {
 	case e.ops <- op:
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-e.done:
-		return errors.New("ctx done")
+		return ErrEngineClosed
 	}
 	select {
 	case err := <-op.resp:
@@ -337,7 +411,7 @@ func (e *Engine) submit(ctx context.Context, isPressed bool, keys []KeyCodes) er
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-e.done:
-		return errors.New("ctx done")
+		return ErrEngineClosed
 	}
 }
 
@@ -345,7 +419,7 @@ func (e *Engine) submit(ctx context.Context, isPressed bool, keys []KeyCodes) er
 // It is only ever invoked from the worker goroutine, so it may safely assume
 // exclusive access to the backend.
 func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) error {
-	switch GlobalConfig.EnabledDriveName {
+	switch e.driveName {
 	case DriveMakc:
 		{
 			client, ok := e.driveClient.(*makc.Client)
@@ -356,6 +430,7 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				if err := ctx.Err(); err != nil {
 					return err
 				}
+				key = e.effectiveKey(key, isPressed)
 				var err error
 				if isPressed {
 					err = MakcInputPress(client, key, ctx)
@@ -365,6 +440,7 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				if err != nil {
 					return err
 				}
+				e.recordKeyState(key, isPressed)
 			}
 			return nil
 		}
@@ -378,6 +454,7 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				if err := ctx.Err(); err != nil {
 					return err
 				}
+				key = e.effectiveKey(key, isPressed)
 				var err error
 				if isPressed {
 					err = client.KeyDown(key.FakerInput, key.Modifiers)
@@ -387,6 +464,7 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				if err != nil {
 					return err
 				}
+				e.recordKeyState(key, isPressed)
 			}
 			return nil
 		}
@@ -400,6 +478,7 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				if err := ctx.Err(); err != nil {
 					return err
 				}
+				key = e.effectiveKey(key, isPressed)
 				var err error
 				if isPressed {
 					err = WinputWithWindowPress(target, key)
@@ -409,6 +488,7 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				if err != nil {
 					return err
 				}
+				e.recordKeyState(key, isPressed)
 			}
 			return nil
 		}
@@ -418,6 +498,7 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				if err := ctx.Err(); err != nil {
 					return err
 				}
+				key = e.effectiveKey(key, isPressed)
 				var err error
 				if isPressed {
 					err = WinputWithInterceptionPress(key)
@@ -427,6 +508,7 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				if err != nil {
 					return err
 				}
+				e.recordKeyState(key, isPressed)
 			}
 			return nil
 		}
@@ -440,6 +522,7 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				if err := ctx.Err(); err != nil {
 					return err
 				}
+				key = e.effectiveKey(key, isPressed)
 				var err error
 				if isPressed {
 					err = client.Press(ctx, key)
@@ -449,11 +532,12 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				if err != nil {
 					return err
 				}
+				e.recordKeyState(key, isPressed)
 			}
 			return nil
 		}
 	default:
-		return fmt.Errorf("unsupported drive %s", GlobalConfig.EnabledDriveName)
+		return fmt.Errorf("unsupported drive %s", e.driveName)
 	}
 }
 
@@ -465,7 +549,7 @@ func (e *Engine) applyMouse(ctx context.Context, ev mouseEvent) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	switch GlobalConfig.EnabledDriveName {
+	switch e.driveName {
 	case DriveFakerInput:
 		{
 			client, ok := e.driveClient.(*FakerInputDevice)
@@ -483,9 +567,16 @@ func (e *Engine) applyMouse(ctx context.Context, ev mouseEvent) error {
 					return err
 				}
 				if ev.isPressed {
-					return client.MouseButtonDown(button)
+					if err := client.MouseButtonDown(button); err != nil {
+						return err
+					}
+				} else {
+					if err := client.MouseButtonUp(button); err != nil {
+						return err
+					}
 				}
-				return client.MouseButtonUp(button)
+				e.recordMouseButton(ev.button, ev.isPressed)
+				return nil
 			case mouseEventWheel:
 				return client.MouseWheel(int8(ev.delta))
 			case mouseEventHWheel:
@@ -500,7 +591,13 @@ func (e *Engine) applyMouse(ctx context.Context, ev mouseEvent) error {
 			if !ok {
 				return fmt.Errorf("drive is not '*NoopDevice'")
 			}
-			return client.Mouse(ctx, ev)
+			if err := client.Mouse(ctx, ev); err != nil {
+				return err
+			}
+			if ev.kind == mouseEventButton {
+				e.recordMouseButton(ev.button, ev.isPressed)
+			}
+			return nil
 		}
 	case DriveMakc:
 		{
@@ -515,9 +612,16 @@ func (e *Engine) applyMouse(ctx context.Context, ev mouseEvent) error {
 				return MakcInputMouseMoveTo(client, ev.x, ev.y, ctx)
 			case mouseEventButton:
 				if ev.isPressed {
-					return MakcInputMouseButtonDown(client, ev.button, ctx)
+					if err := MakcInputMouseButtonDown(client, ev.button, ctx); err != nil {
+						return err
+					}
+				} else {
+					if err := MakcInputMouseButtonUp(client, ev.button, ctx); err != nil {
+						return err
+					}
 				}
-				return MakcInputMouseButtonUp(client, ev.button, ctx)
+				e.recordMouseButton(ev.button, ev.isPressed)
+				return nil
 			case mouseEventWheel:
 				return MakcInputMouseWheel(client, ev.delta, ctx)
 			case mouseEventHWheel:
@@ -527,8 +631,130 @@ func (e *Engine) applyMouse(ctx context.Context, ev mouseEvent) error {
 			}
 		}
 	case DriveWinputWithWindow, DriveWinputWithInterception:
-		return fmt.Errorf("mouse not implemented for drive %s", GlobalConfig.EnabledDriveName)
+		return fmt.Errorf("mouse not implemented for drive %s", e.driveName)
 	default:
-		return fmt.Errorf("unsupported drive %s", GlobalConfig.EnabledDriveName)
+		return fmt.Errorf("unsupported drive %s", e.driveName)
+	}
+}
+
+// effectiveKey resolves which key to send to the backend. For a press it is the
+// requested key. For a release it prefers the exact held entry, then falls back
+// to a held entry that identifies the same physical key but differs in
+// modifiers (for example "A" pressed with Shift and "a" released without it).
+// Using the held entry lets the backend release exactly the state it recorded
+// and removes the matching tracking entry, so shutdown does not send a spurious
+// extra release and FakerInput does not leave the modifier held.
+func (e *Engine) effectiveKey(key KeyCodes, isPressed bool) KeyCodes {
+	if isPressed {
+		return key
+	}
+	if _, ok := e.heldKeySet[key]; ok {
+		return key
+	}
+	for _, held := range e.heldKeys {
+		if samePhysicalKey(held, key) {
+			return held
+		}
+	}
+	return key
+}
+
+// samePhysicalKey reports whether two KeyCodes refer to the same physical key,
+// ignoring modifier flags. The FakerInput code is used as the backend-neutral
+// identity because every non-modifier key maps to it one-to-one; modifier-only
+// keys (code 0) are identified by their modifier flag instead.
+func samePhysicalKey(a, b KeyCodes) bool {
+	if a.FakerInput != 0 || b.FakerInput != 0 {
+		return a.FakerInput == b.FakerInput
+	}
+	return a.Modifiers == b.Modifiers
+}
+
+// recordKeyState updates the set of held keys after a backend injection
+// succeeded. It must only be called from the keyboard worker goroutine.
+func (e *Engine) recordKeyState(key KeyCodes, isPressed bool) {
+	if isPressed {
+		if _, ok := e.heldKeySet[key]; ok {
+			return
+		}
+		e.heldKeySet[key] = struct{}{}
+		e.heldKeys = append(e.heldKeys, key)
+		return
+	}
+	if _, ok := e.heldKeySet[key]; !ok {
+		return
+	}
+	delete(e.heldKeySet, key)
+	for i, held := range e.heldKeys {
+		if held == key {
+			e.heldKeys = append(e.heldKeys[:i], e.heldKeys[i+1:]...)
+			return
+		}
+	}
+}
+
+// recordMouseButton updates the set of held mouse buttons after a backend
+// injection succeeded. It must only be called from the mouse worker goroutine.
+func (e *Engine) recordMouseButton(button MouseButton, isPressed bool) {
+	if isPressed {
+		if _, ok := e.heldButtonSet[button]; ok {
+			return
+		}
+		e.heldButtonSet[button] = struct{}{}
+		e.heldButtons = append(e.heldButtons, button)
+		return
+	}
+	if _, ok := e.heldButtonSet[button]; !ok {
+		return
+	}
+	delete(e.heldButtonSet, button)
+	for i, held := range e.heldButtons {
+		if held == button {
+			e.heldButtons = append(e.heldButtons[:i], e.heldButtons[i+1:]...)
+			return
+		}
+	}
+}
+
+// releaseHeldKeys releases every key still held by the engine. It runs on the
+// keyboard worker during shutdown, after the request queue has been drained.
+// The state is snapshot and cleared first so the per-key release path cannot
+// mutate the slice being iterated. Release failures are logged and do not stop
+// the remaining keys from being released.
+func (e *Engine) releaseHeldKeys() {
+	if len(e.heldKeys) == 0 {
+		return
+	}
+	keys := append([]KeyCodes(nil), e.heldKeys...)
+	e.heldKeys = nil
+	clear(e.heldKeySet)
+	slog.Warn("releasing held keys on shutdown", "keys", keys)
+	for _, key := range slices.Backward(keys) {
+		if err := e.apply(context.Background(), []KeyCodes{key}, false); err != nil {
+			slog.Warn("release held key on shutdown failed",
+				"makc", key.Makc,
+				"winput", key.Winput,
+				"fakerInput", key.FakerInput,
+				"modifiers", key.Modifiers,
+				"err", err,
+			)
+		}
+	}
+}
+
+// releaseHeldButtons releases every mouse button still held by the engine. It
+// runs on the mouse worker during shutdown, after the queue has been drained.
+func (e *Engine) releaseHeldButtons() {
+	if len(e.heldButtons) == 0 {
+		return
+	}
+	buttons := append([]MouseButton(nil), e.heldButtons...)
+	e.heldButtons = nil
+	clear(e.heldButtonSet)
+	slog.Debug("releasing held mouse buttons on shutdown", "count", len(buttons))
+	for _, button := range slices.Backward(buttons) {
+		if err := e.applyMouse(context.Background(), mouseEvent{kind: mouseEventButton, button: button, isPressed: false}); err != nil {
+			slog.Warn("release held mouse button on shutdown failed", "button", button, "err", err)
+		}
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 )
@@ -74,20 +75,23 @@ func TestEngineSubmitCancelledContext(t *testing.T) {
 func TestEngineSubmitPropagatesError(t *testing.T) {
 	e := newNoopTestEngine(t)
 
-	// The worker reads the drive name at dispatch time, so switching to an
-	// unknown drive makes apply return an error that must reach the submitter.
-	GlobalConfig.EnabledDriveName = DriveName("bogus")
+	// Closing the backend directly makes the worker's apply return an error
+	// that must reach the submitter.
+	dev, ok := e.driveClient.(*NoopDevice)
+	if !ok {
+		t.Fatalf("driveClient is not *NoopDevice, got %T", e.driveClient)
+	}
+	if err := dev.Close(); err != nil {
+		t.Fatalf("close noop device: %v", err)
+	}
 	if err := e.EnginePress(context.Background(), KeyCodes{}); err == nil {
 		t.Fatal("expected error propagated from worker")
 	}
 }
 
 func TestEngineApplyUnsupportedDrive(t *testing.T) {
-	prev := GlobalConfig.EnabledDriveName
-	GlobalConfig.EnabledDriveName = DriveName("bogus")
-	t.Cleanup(func() { GlobalConfig.EnabledDriveName = prev })
-
 	e := NewEngine()
+	e.driveName = DriveName("bogus")
 	if err := e.apply(context.Background(), []KeyCodes{{}}, true); err == nil {
 		t.Fatal("expected error for unsupported drive")
 	}
@@ -142,16 +146,255 @@ func TestEngineConcurrentMouseKeyboardNoop(t *testing.T) {
 }
 
 func TestEngineMouseApplyUnsupportedDrive(t *testing.T) {
-	prev := GlobalConfig.EnabledDriveName
-	t.Cleanup(func() { GlobalConfig.EnabledDriveName = prev })
-
 	e := NewEngine()
 	for _, drive := range []DriveName{DriveWinputWithWindow, DriveWinputWithInterception} {
-		GlobalConfig.EnabledDriveName = drive
+		e.driveName = drive
 		if err := e.applyMouse(context.Background(), mouseEvent{kind: mouseEventMoveRel, dx: 1, dy: 1}); err == nil {
 			t.Errorf("expected error for drive %s", drive)
 		}
 	}
+}
+
+// TestCloseEngineReleasesHeldInput verifies that a graceful shutdown releases
+// every key and mouse button that was pressed but never released.
+func TestCloseEngineReleasesHeldInput(t *testing.T) {
+	e := newNoopTestEngine(t)
+	ctx := context.Background()
+	if err := e.EnginePress(ctx, KeyCodes{FakerInput: fakerInputKeyA}); err != nil {
+		t.Fatalf("press a: %v", err)
+	}
+	if err := e.EnginePress(ctx, KeyCodes{FakerInput: fakerInputKeyB}); err != nil {
+		t.Fatalf("press b: %v", err)
+	}
+	if err := e.EngineMouseButtonDown(ctx, MouseButtonLeft); err != nil {
+		t.Fatalf("mouse down: %v", err)
+	}
+
+	if err := e.CloseEngine(); err != nil {
+		t.Fatalf("CloseEngine: %v", err)
+	}
+
+	dev, ok := e.driveClient.(*NoopDevice)
+	if !ok {
+		t.Fatalf("driveClient is not *NoopDevice, got %T", e.driveClient)
+	}
+	press, release := dev.Stats()
+	if press != 2 || release != 2 {
+		t.Fatalf("press=%d release=%d, want 2/2", press, release)
+	}
+	_, _, buttonDown, buttonUp, _, _ := dev.MouseStats()
+	if buttonDown != 1 || buttonUp != 1 {
+		t.Fatalf("buttonDown=%d buttonUp=%d, want 1/1", buttonDown, buttonUp)
+	}
+}
+
+// TestCloseEngineReleasesBeforeBackendClose proves the release happens while the
+// backend is still usable: the Noop backend rejects writes after Close, so the
+// release counter can only reach 1 if it ran before CloseEngine closed it.
+func TestCloseEngineReleasesBeforeBackendClose(t *testing.T) {
+	e := newNoopTestEngine(t)
+	if err := e.EnginePress(context.Background(), KeyCodes{FakerInput: fakerInputKeyA}); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	dev, ok := e.driveClient.(*NoopDevice)
+	if !ok {
+		t.Fatalf("driveClient is not *NoopDevice, got %T", e.driveClient)
+	}
+
+	if err := e.CloseEngine(); err != nil {
+		t.Fatalf("CloseEngine: %v", err)
+	}
+	if !dev.Closed() {
+		t.Fatal("backend was not closed")
+	}
+	press, release := dev.Stats()
+	if press != 1 || release != 1 {
+		t.Fatalf("press=%d release=%d, want 1/1", press, release)
+	}
+	if err := dev.Release(context.Background(), KeyCodes{}); err == nil {
+		t.Fatal("expected writes to a closed noop device to fail")
+	}
+}
+
+func TestCloseEngineIdempotent(t *testing.T) {
+	e := newNoopTestEngine(t)
+	if err := e.CloseEngine(); err != nil {
+		t.Fatalf("first CloseEngine: %v", err)
+	}
+	if err := e.CloseEngine(); err != nil {
+		t.Fatalf("second CloseEngine: %v", err)
+	}
+}
+
+func TestEngineRejectsSubmitAfterClose(t *testing.T) {
+	e := newNoopTestEngine(t)
+	if err := e.CloseEngine(); err != nil {
+		t.Fatalf("CloseEngine: %v", err)
+	}
+	if err := e.EnginePress(context.Background(), KeyCodes{}); !errors.Is(err, ErrEngineClosed) {
+		t.Fatalf("press after close: err=%v, want ErrEngineClosed", err)
+	}
+	if err := e.EngineMouseMove(context.Background(), 1, 1); !errors.Is(err, ErrEngineClosed) {
+		t.Fatalf("mouse move after close: err=%v, want ErrEngineClosed", err)
+	}
+}
+
+// TestDrainAppliesCanceledRelease verifies that a queued release whose request
+// context has already been canceled is still applied while draining, using a
+// detached context.
+func TestDrainAppliesCanceledRelease(t *testing.T) {
+	e := NewEngine()
+	e.driveName = DriveNoop
+	dev := NewNoopDevice(0)
+	e.driveClient = dev
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	op := keyOp{
+		ctx:       ctx,
+		isPressed: false,
+		keys:      []KeyCodes{{FakerInput: fakerInputKeyA}},
+		resp:      make(chan error, 1),
+	}
+	e.ops <- op
+	e.drain()
+
+	if err := <-op.resp; err != nil {
+		t.Fatalf("drain release: %v", err)
+	}
+	_, release := dev.Stats()
+	if release != 1 {
+		t.Fatalf("release=%d, want 1", release)
+	}
+}
+
+// TestEngineConcurrentSubmitAndClose exercises the submit/close hand-off under
+// the race detector: every submit must either succeed or return
+// ErrEngineClosed, never touch a closed backend.
+func TestEngineConcurrentSubmitAndClose(t *testing.T) {
+	e := newNoopTestEngine(t)
+
+	const n = 100
+	var wg sync.WaitGroup
+	for range n {
+		wg.Go(func() {
+			err := e.EnginePress(context.Background(), KeyCodes{FakerInput: fakerInputKeyA})
+			if err != nil && !errors.Is(err, ErrEngineClosed) {
+				t.Errorf("press: %v", err)
+			}
+		})
+	}
+	wg.Go(func() {
+		if err := e.CloseEngine(); err != nil {
+			t.Errorf("CloseEngine: %v", err)
+		}
+	})
+	wg.Wait()
+}
+
+// TestEngineReleaseUsesHeldModifiers reproduces the "key was already released
+// but shutdown still sends another release" case: pressing a shifted key and
+// releasing its unshifted variant (or vice versa) identifies the same physical
+// key but with a different KeyCodes.Modifiers value. The release must match the
+// held entry and clear it; otherwise shutdown sends a spurious extra key-up and,
+// for FakerInput, can leave the modifier held.
+func TestEngineReleaseUsesHeldModifiers(t *testing.T) {
+	e := newNoopTestEngine(t)
+	ctx := context.Background()
+	pressed := KeyCodes{FakerInput: fakerInputKeyA, Modifiers: ModLShift}
+	released := KeyCodes{FakerInput: fakerInputKeyA}
+
+	if err := e.EnginePress(ctx, pressed); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if err := e.EngineRelease(ctx, released); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if err := e.CloseEngine(); err != nil {
+		t.Fatalf("CloseEngine: %v", err)
+	}
+
+	dev, ok := e.driveClient.(*NoopDevice)
+	if !ok {
+		t.Fatalf("driveClient is not *NoopDevice, got %T", e.driveClient)
+	}
+	press, release := dev.Stats()
+	if press != 1 || release != 1 {
+		t.Fatalf("press=%d release=%d, want 1/1 (the key was already released; shutdown must not release it again)", press, release)
+	}
+}
+
+// BenchmarkEngineSubmitNoop measures the hot submit path against the noop
+// backend (no injection cost), so changes to the submit-side synchronization or
+// the held-input bookkeeping are visible.
+func BenchmarkEngineSubmitNoop(b *testing.B) {
+	prevDrive := GlobalConfig.EnabledDriveName
+	prevQueue := GlobalConfig.DispatchQueueSize
+	prevLatency := GlobalConfig.NoopLatencyMicros
+	GlobalConfig.EnabledDriveName = DriveNoop
+	GlobalConfig.DispatchQueueSize = defaultDispatchQueueSize
+	GlobalConfig.NoopLatencyMicros = 0
+
+	e := NewEngine()
+	if err := e.StartEngine(); err != nil {
+		b.Fatalf("StartEngine: %v", err)
+	}
+	b.Cleanup(func() {
+		e.CloseEngine()
+		GlobalConfig.EnabledDriveName = prevDrive
+		GlobalConfig.DispatchQueueSize = prevQueue
+		GlobalConfig.NoopLatencyMicros = prevLatency
+	})
+
+	ctx := context.Background()
+	key := KeyCodes{FakerInput: fakerInputKeyA}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := e.EnginePress(ctx, key); err != nil {
+			b.Fatalf("press: %v", err)
+		}
+		if err := e.EngineRelease(ctx, key); err != nil {
+			b.Fatalf("release: %v", err)
+		}
+	}
+}
+
+// BenchmarkEngineSubmitNoopParallel measures concurrent submitters contending
+// on the shared dispatch queue and the submit-side shutdown check.
+func BenchmarkEngineSubmitNoopParallel(b *testing.B) {
+	prevDrive := GlobalConfig.EnabledDriveName
+	prevQueue := GlobalConfig.DispatchQueueSize
+	prevLatency := GlobalConfig.NoopLatencyMicros
+	GlobalConfig.EnabledDriveName = DriveNoop
+	GlobalConfig.DispatchQueueSize = defaultDispatchQueueSize
+	GlobalConfig.NoopLatencyMicros = 0
+
+	e := NewEngine()
+	if err := e.StartEngine(); err != nil {
+		b.Fatalf("StartEngine: %v", err)
+	}
+	b.Cleanup(func() {
+		e.CloseEngine()
+		GlobalConfig.EnabledDriveName = prevDrive
+		GlobalConfig.DispatchQueueSize = prevQueue
+		GlobalConfig.NoopLatencyMicros = prevLatency
+	})
+
+	ctx := context.Background()
+	key := KeyCodes{FakerInput: fakerInputKeyA}
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			if err := e.EnginePress(ctx, key); err != nil {
+				b.Errorf("press: %v", err)
+				return
+			}
+			if err := e.EngineRelease(ctx, key); err != nil {
+				b.Errorf("release: %v", err)
+				return
+			}
+		}
+	})
 }
 
 func TestFakerInputAbsCoordinate(t *testing.T) {

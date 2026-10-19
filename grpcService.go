@@ -42,6 +42,9 @@ func (s *GoKeyMuxService) KeyService(stream pb.RpcKeyService_KeyServiceServer) e
 			return err
 		}
 		if err := s.dispatch(stream.Context(), req.GetKey(), req.GetIsRune(), req.GetIsPressed()); err != nil {
+			if errors.Is(err, ErrEngineClosed) {
+				return status.Error(codes.Unavailable, "engine is shutting down")
+			}
 			errCount++
 			slog.Default().LogAttrs(stream.Context(), slog.LevelWarn, "key dispatch failed",
 				slog.String("key", req.GetKey()),
@@ -72,6 +75,9 @@ func (s *GoKeyMuxService) KeyServiceDebug(ctx context.Context, req *pb.KeyInputD
 		)
 	}
 	if err := s.dispatch(ctx, req.GetKey(), req.GetIsRune(), req.GetIsPressed()); err != nil {
+		if errors.Is(err, ErrEngineClosed) {
+			return nil, status.Error(codes.Unavailable, "engine is shutting down")
+		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, status.FromContextError(err).Err()
 		}
@@ -212,6 +218,9 @@ func (s *GoKeyMuxService) MouseService(stream pb.RpcKeyService_MouseServiceServe
 			slog.Default().LogAttrs(stream.Context(), slog.LevelWarn, "unknown mouse event",
 				slog.String("type", req.GetType().String()),
 			)
+		}
+		if errors.Is(err, ErrEngineClosed) {
+			return status.Error(codes.Unavailable, "engine is shutting down")
 		}
 	}
 }

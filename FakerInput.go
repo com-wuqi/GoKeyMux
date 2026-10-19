@@ -199,10 +199,21 @@ func getHIDTopLevelUsage(h windows.Handle) (usagePage, usage uint16, ok bool) {
 	return usagePage, usage, true
 }
 
-// Close closes the device handle.
+// Close releases all held keys and mouse buttons, then closes the device
+// handle. Closing the handle alone does not send key-up reports, so any key
+// reported as down would otherwise stay stuck. It is safe to call Close more
+// than once.
 func (d *FakerInputDevice) Close() error {
 	if d == nil || d.handle == windows.InvalidHandle {
 		return nil
+	}
+	// Best-effort final release. The Engine already releases its tracked input
+	// before closing; this protects other callers that use the device directly.
+	if err := d.releaseAll(); err != nil {
+		slog.Debug("FakerInput Close: release all keys failed", "err", err)
+	}
+	if err := d.ReleaseAllButtons(); err != nil {
+		slog.Debug("FakerInput Close: release all buttons failed", "err", err)
 	}
 	err := windows.CloseHandle(d.handle)
 	d.handle = windows.InvalidHandle

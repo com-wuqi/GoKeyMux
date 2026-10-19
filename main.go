@@ -44,13 +44,25 @@ func main() {
 		return
 	}
 	slog.Info("engine started")
-	defer func(engine *Engine) {
-		err := engine.CloseEngine()
-		if err != nil {
+
+	// closeEngine runs the engine shutdown exactly once. It is called
+	// explicitly on SIGINT/SIGTERM and deferred as a safety net for early
+	// returns. The engine must be closed before the gRPC server so held input is
+	// released while the backend is still usable, and so in-flight requests fail
+	// fast with ErrEngineClosed instead of entering a queue that will not be
+	// drained.
+	engineClosed := false
+	closeEngine := func() {
+		if engineClosed {
+			return
+		}
+		engineClosed = true
+		if err := engine.CloseEngine(); err != nil {
 			slog.Error("Error closing engine", "err", err)
 		}
 		slog.Info("engine closed")
-	}(engine)
+	}
+	defer closeEngine()
 
 	slog.Info("server starting")
 	server, serverErrCh, err := StartService(engine)
@@ -75,4 +87,8 @@ func main() {
 	}()
 
 	<-sigCh
+
+	// Release held input and reject new requests first; the deferred server
+	// shutdown then terminates in-flight streams afterwards.
+	closeEngine()
 }

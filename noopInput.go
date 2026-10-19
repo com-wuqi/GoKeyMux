@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -20,6 +21,7 @@ type NoopDevice struct {
 	pressCount   uint64
 	releaseCount uint64
 	latency      time.Duration
+	closed       bool
 
 	mouseMoveCount     uint64
 	mouseMoveAbsCount  uint64
@@ -33,7 +35,22 @@ func NewNoopDevice(latency time.Duration) *NoopDevice {
 	return &NoopDevice{latency: latency}
 }
 
+// Close marks the device as closed. Subsequent injections fail, which lets
+// tests verify that shutdown releases held input before the backend is closed.
+func (d *NoopDevice) Close() error {
+	d.closed = true
+	return nil
+}
+
+// Closed reports whether Close has been called.
+func (d *NoopDevice) Closed() bool {
+	return d.closed
+}
+
 func (d *NoopDevice) Press(ctx context.Context, _ KeyCodes) error {
+	if err := d.ensureOpen(); err != nil {
+		return err
+	}
 	if err := d.applyLatency(ctx); err != nil {
 		return err
 	}
@@ -42,6 +59,9 @@ func (d *NoopDevice) Press(ctx context.Context, _ KeyCodes) error {
 }
 
 func (d *NoopDevice) Release(ctx context.Context, _ KeyCodes) error {
+	if err := d.ensureOpen(); err != nil {
+		return err
+	}
 	if err := d.applyLatency(ctx); err != nil {
 		return err
 	}
@@ -52,6 +72,9 @@ func (d *NoopDevice) Release(ctx context.Context, _ KeyCodes) error {
 // Mouse processes a single backend-neutral mouse event, incrementing the
 // corresponding counter. It performs no real injection.
 func (d *NoopDevice) Mouse(ctx context.Context, ev mouseEvent) error {
+	if err := d.ensureOpen(); err != nil {
+		return err
+	}
 	if err := d.applyLatency(ctx); err != nil {
 		return err
 	}
@@ -72,6 +95,13 @@ func (d *NoopDevice) Mouse(ctx context.Context, ev mouseEvent) error {
 		d.mouseHWheelCount++
 	default:
 		return fmt.Errorf("unknown mouse event %d", ev.kind)
+	}
+	return nil
+}
+
+func (d *NoopDevice) ensureOpen() error {
+	if d.closed {
+		return errors.New("noop device is closed")
 	}
 	return nil
 }

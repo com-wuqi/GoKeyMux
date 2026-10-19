@@ -67,6 +67,7 @@ func runKeyCycles(ctx context.Context, client pb.RpcKeyServiceClient, cycles int
 			if err := stream.Send(&pb.KeyInput{Key: key, IsRune: true, IsPressed: true}); err != nil {
 				log.Fatalf("send press %q: %v", key, err)
 			}
+			time.Sleep(100 * time.Millisecond)
 			if err := stream.Send(&pb.KeyInput{Key: key, IsRune: true, IsPressed: false}); err != nil {
 				log.Fatalf("send release %q: %v", key, err)
 			}
@@ -116,6 +117,7 @@ func runNamedKeyTest(ctx context.Context, client pb.RpcKeyServiceClient, keys []
 		if ctx.Err() != nil {
 			break
 		}
+		time.Sleep(100 * time.Millisecond)
 		log.Printf("press %q", key)
 		if err := stream.Send(&pb.KeyInput{Key: key, IsRune: false, IsPressed: true}); err != nil {
 			log.Fatalf("send press %q: %v", key, err)
@@ -126,6 +128,7 @@ func runNamedKeyTest(ctx context.Context, client pb.RpcKeyServiceClient, keys []
 			case <-time.After(delay):
 			}
 		}
+		time.Sleep(100 * time.Millisecond)
 		log.Printf("release %q", key)
 		if err := stream.Send(&pb.KeyInput{Key: key, IsRune: false, IsPressed: false}); err != nil {
 			log.Fatalf("send release %q: %v", key, err)
@@ -180,6 +183,7 @@ func runMouseTest(ctx context.Context, client pb.RpcKeyServiceClient, delay time
 			case <-time.After(delay):
 			}
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	log.Printf("sent %d mouse events in %s", len(events), time.Since(start))
 
