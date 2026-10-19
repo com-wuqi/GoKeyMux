@@ -292,10 +292,14 @@ go test -tags integration ./...
 
 ### 发布（`.github/workflows/release.yml`）
 
-| 触发方式                 | 行为                                                                           |
-|--------------------------|--------------------------------------------------------------------------------|
-| 推送 `v*` tag            | 构建 → 打包 zip → 自动创建 GitHub Release 并附带 zip（自动生成 release notes） |
-| 手动 `workflow_dispatch` | 构建 → 打包 zip → 仅上传 artifact，不创建 Release                              |
+| 触发方式                                           | 行为                                                     |
+|----------------------------------------------------|----------------------------------------------------------|
+| 推送 `v*` tag（如 `v0.2.0`）                       | 构建 → 打包 zip → 创建正式 Release 并设为 Latest         |
+| 推送带 SemVer 预发布后缀的 tag（如 `v0.2.0-rc.1`） | 同上，但 Release 标记为 **Pre-release**，不会成为 Latest |
+| 手动 `workflow_dispatch`                           | 构建 → 打包 zip → 仅上传 artifact，不创建 Release        |
+
+预发布 tag 需符合 `vX.Y.Z-suffix` 形式（如 `v0.2.0-beta.2`、`v0.2.0-rc.1`），`alpha` / `beta` / `rc`
+等后缀均可；tag 构建时 `version.Version` 会原样注入 tag 名，因此预发布包在启动日志中可直接辨认。
 
 同时构建 **x64（amd64）** 与 **x86（386）** 两个平台，各产出一个 zip：
 
