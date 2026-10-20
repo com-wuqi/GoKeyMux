@@ -1,4 +1,4 @@
-package main
+package input
 
 import (
 	"context"
@@ -143,4 +143,10 @@ func MakcInputMouseHWheel(client *makc.Client, delta int32, ctx context.Context)
 		return fmt.Errorf("makc client is nil")
 	}
 	return client.Mouse.HWheel(ctx, int(delta))
+}
+
+// MakcScreenSize returns the screen size cached by MakcInputInit. It is used by
+// integration tests; production code reads the cache directly.
+func MakcScreenSize() (width, height int) {
+	return makcScreenSize.X, makcScreenSize.Y
 }

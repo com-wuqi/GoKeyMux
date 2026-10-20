@@ -1,6 +1,7 @@
-package main
+package engine
 
 import (
+	"GoKeyMux/internal/config"
 	"context"
 	"errors"
 	"sync"
@@ -11,21 +12,21 @@ import (
 // queue, restoring global config afterwards.
 func newNoopTestEngine(t *testing.T) *Engine {
 	t.Helper()
-	prevDrive := GlobalConfig.EnabledDriveName
-	prevQueue := GlobalConfig.DispatchQueueSize
-	prevLatency := GlobalConfig.NoopLatencyMicros
-	GlobalConfig.EnabledDriveName = DriveNoop
-	GlobalConfig.DispatchQueueSize = 8
-	GlobalConfig.NoopLatencyMicros = 0
+	prevDrive := config.GlobalConfig.EnabledDriveName
+	prevQueue := config.GlobalConfig.DispatchQueueSize
+	prevLatency := config.GlobalConfig.NoopLatencyMicros
+	config.GlobalConfig.EnabledDriveName = DriveNoop
+	config.GlobalConfig.DispatchQueueSize = 8
+	config.GlobalConfig.NoopLatencyMicros = 0
 	e := NewEngine()
 	if err := e.StartEngine(); err != nil {
 		t.Fatalf("StartEngine: %v", err)
 	}
 	t.Cleanup(func() {
 		e.CloseEngine()
-		GlobalConfig.EnabledDriveName = prevDrive
-		GlobalConfig.DispatchQueueSize = prevQueue
-		GlobalConfig.NoopLatencyMicros = prevLatency
+		config.GlobalConfig.EnabledDriveName = prevDrive
+		config.GlobalConfig.DispatchQueueSize = prevQueue
+		config.GlobalConfig.NoopLatencyMicros = prevLatency
 	})
 	return e
 }
@@ -149,7 +150,7 @@ func TestEngineMouseApplyUnsupportedDrive(t *testing.T) {
 	e := NewEngine()
 	for _, drive := range []DriveName{DriveWinputWithWindow, DriveWinputWithInterception} {
 		e.driveName = drive
-		if err := e.applyMouse(context.Background(), mouseEvent{kind: mouseEventMoveRel, dx: 1, dy: 1}); err == nil {
+		if err := e.applyMouse(context.Background(), mouseEvent{Kind: mouseEventMoveRel, DX: 1, DY: 1}); err == nil {
 			t.Errorf("expected error for drive %s", drive)
 		}
 	}
@@ -328,12 +329,12 @@ func TestEngineReleaseUsesHeldModifiers(t *testing.T) {
 // backend (no injection cost), so changes to the submit-side synchronization or
 // the held-input bookkeeping are visible.
 func BenchmarkEngineSubmitNoop(b *testing.B) {
-	prevDrive := GlobalConfig.EnabledDriveName
-	prevQueue := GlobalConfig.DispatchQueueSize
-	prevLatency := GlobalConfig.NoopLatencyMicros
-	GlobalConfig.EnabledDriveName = DriveNoop
-	GlobalConfig.DispatchQueueSize = defaultDispatchQueueSize
-	GlobalConfig.NoopLatencyMicros = 0
+	prevDrive := config.GlobalConfig.EnabledDriveName
+	prevQueue := config.GlobalConfig.DispatchQueueSize
+	prevLatency := config.GlobalConfig.NoopLatencyMicros
+	config.GlobalConfig.EnabledDriveName = DriveNoop
+	config.GlobalConfig.DispatchQueueSize = defaultDispatchQueueSize
+	config.GlobalConfig.NoopLatencyMicros = 0
 
 	e := NewEngine()
 	if err := e.StartEngine(); err != nil {
@@ -341,9 +342,9 @@ func BenchmarkEngineSubmitNoop(b *testing.B) {
 	}
 	b.Cleanup(func() {
 		e.CloseEngine()
-		GlobalConfig.EnabledDriveName = prevDrive
-		GlobalConfig.DispatchQueueSize = prevQueue
-		GlobalConfig.NoopLatencyMicros = prevLatency
+		config.GlobalConfig.EnabledDriveName = prevDrive
+		config.GlobalConfig.DispatchQueueSize = prevQueue
+		config.GlobalConfig.NoopLatencyMicros = prevLatency
 	})
 
 	ctx := context.Background()
@@ -362,12 +363,12 @@ func BenchmarkEngineSubmitNoop(b *testing.B) {
 // BenchmarkEngineSubmitNoopParallel measures concurrent submitters contending
 // on the shared dispatch queue and the submit-side shutdown check.
 func BenchmarkEngineSubmitNoopParallel(b *testing.B) {
-	prevDrive := GlobalConfig.EnabledDriveName
-	prevQueue := GlobalConfig.DispatchQueueSize
-	prevLatency := GlobalConfig.NoopLatencyMicros
-	GlobalConfig.EnabledDriveName = DriveNoop
-	GlobalConfig.DispatchQueueSize = defaultDispatchQueueSize
-	GlobalConfig.NoopLatencyMicros = 0
+	prevDrive := config.GlobalConfig.EnabledDriveName
+	prevQueue := config.GlobalConfig.DispatchQueueSize
+	prevLatency := config.GlobalConfig.NoopLatencyMicros
+	config.GlobalConfig.EnabledDriveName = DriveNoop
+	config.GlobalConfig.DispatchQueueSize = defaultDispatchQueueSize
+	config.GlobalConfig.NoopLatencyMicros = 0
 
 	e := NewEngine()
 	if err := e.StartEngine(); err != nil {
@@ -375,9 +376,9 @@ func BenchmarkEngineSubmitNoopParallel(b *testing.B) {
 	}
 	b.Cleanup(func() {
 		e.CloseEngine()
-		GlobalConfig.EnabledDriveName = prevDrive
-		GlobalConfig.DispatchQueueSize = prevQueue
-		GlobalConfig.NoopLatencyMicros = prevLatency
+		config.GlobalConfig.EnabledDriveName = prevDrive
+		config.GlobalConfig.DispatchQueueSize = prevQueue
+		config.GlobalConfig.NoopLatencyMicros = prevLatency
 	})
 
 	ctx := context.Background()
@@ -395,44 +396,4 @@ func BenchmarkEngineSubmitNoopParallel(b *testing.B) {
 			}
 		}
 	})
-}
-
-func TestFakerInputAbsCoordinate(t *testing.T) {
-	cases := []struct {
-		in   int32
-		want uint16
-	}{
-		{0, 0},
-		{10000, 32767},
-		{5000, 16383},
-		{-1, 0},
-		{10001, 32767},
-	}
-	for _, c := range cases {
-		if got := FakerInputAbsCoordinate(c.in); got != c.want {
-			t.Errorf("FakerInputAbsCoordinate(%d) = %d, want %d", c.in, got, c.want)
-		}
-	}
-}
-
-func TestFakerInputRelDelta(t *testing.T) {
-	cases := []struct {
-		in   int32
-		want int16
-	}{
-		{0, 0},
-		{1, 1},
-		{-1, -1},
-		{32767, 32767},
-		{-32767, -32767},
-		{32768, 32767},
-		{-32768, -32767},
-		{40000, 32767},
-		{-40000, -32767},
-	}
-	for _, c := range cases {
-		if got := FakerInputRelDelta(c.in); got != c.want {
-			t.Errorf("FakerInputRelDelta(%d) = %d, want %d", c.in, got, c.want)
-		}
-	}
 }

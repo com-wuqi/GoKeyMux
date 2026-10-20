@@ -1,4 +1,4 @@
-package main
+package input
 
 import (
 	"strings"
@@ -480,4 +480,15 @@ func KeyCodesFromRunes(s string) ([]KeyCodes, bool) {
 		keys = append(keys, kc)
 	}
 	return keys, true
+}
+
+// SamePhysicalKey reports whether two KeyCodes refer to the same physical key,
+// ignoring modifier flags. The FakerInput code is used as the backend-neutral
+// identity because every non-modifier key maps to it one-to-one; modifier-only
+// keys (code 0) are identified by their modifier flag instead.
+func SamePhysicalKey(a, b KeyCodes) bool {
+	if a.FakerInput != 0 || b.FakerInput != 0 {
+		return a.FakerInput == b.FakerInput
+	}
+	return a.Modifiers == b.Modifiers
 }

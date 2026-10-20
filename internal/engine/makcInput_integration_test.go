@@ -1,8 +1,10 @@
 //go:build integration
 
-package main
+package engine
 
 import (
+	"GoKeyMux/internal/config"
+	"GoKeyMux/internal/input"
 	"context"
 	"testing"
 	"time"
@@ -25,9 +27,9 @@ func absInt(v int) int {
 func TestMakcEngineIntegration(t *testing.T) {
 	ctx := context.Background()
 
-	prev := GlobalConfig.EnabledDriveName
-	GlobalConfig.EnabledDriveName = DriveMakc
-	t.Cleanup(func() { GlobalConfig.EnabledDriveName = prev })
+	prev := config.GlobalConfig.EnabledDriveName
+	config.GlobalConfig.EnabledDriveName = DriveMakc
+	t.Cleanup(func() { config.GlobalConfig.EnabledDriveName = prev })
 
 	e := NewEngine()
 	if err := e.StartEngine(); err != nil {
@@ -43,15 +45,16 @@ func TestMakcEngineIntegration(t *testing.T) {
 		client.Keyboard.InjectionBackend(), client.Mouse.InjectionBackend())
 
 	// Screen size must be cached at startup.
-	if makcScreenSize.X <= 0 || makcScreenSize.Y <= 0 {
-		t.Fatalf("screen size not cached: %+v", makcScreenSize)
+	screenW, screenH := input.MakcScreenSize()
+	if screenW <= 0 || screenH <= 0 {
+		t.Fatalf("screen size not cached: %dx%d", screenW, screenH)
 	}
-	t.Logf("cached screen size: %dx%d", makcScreenSize.X, makcScreenSize.Y)
+	t.Logf("cached screen size: %dx%d", screenW, screenH)
 
 	// Keyboard must still dispatch through the engine.
-	kc, ok := KeyCodesFromName("shift")
+	kc, ok := input.KeyCodesFromName("shift")
 	if !ok {
-		t.Fatal("KeyCodesFromName(shift) failed")
+		t.Fatal("input.KeyCodesFromName(shift) failed")
 	}
 	if err := e.EnginePress(ctx, kc); err != nil {
 		t.Fatalf("engine keyboard press: %v", err)
@@ -106,17 +109,17 @@ func TestMakcInputSendInputIntegration(t *testing.T) {
 	t.Cleanup(func() { _ = client.Mouse.MoveTo(ctx, start.X, start.Y) })
 
 	// --- Keyboard ---
-	kc, ok := KeyCodesFromName("lshift")
+	kc, ok := input.KeyCodesFromName("lshift")
 	if !ok {
-		t.Fatal("KeyCodesFromName(lshift) failed")
+		t.Fatal("input.KeyCodesFromName(lshift) failed")
 	}
-	if err := MakcInputPress(client, kc, ctx); err != nil {
+	if err := input.MakcInputPress(client, kc, ctx); err != nil {
 		t.Fatalf("keyboard press: %v", err)
 	}
 	if down, err := client.Keyboard.Down(ctx, kc.Makc); err != nil || !down {
 		t.Fatalf("keyboard not down after press: down=%v err=%v", down, err)
 	}
-	if err := MakcInputRelease(client, kc, ctx); err != nil {
+	if err := input.MakcInputRelease(client, kc, ctx); err != nil {
 		t.Fatalf("keyboard release: %v", err)
 	}
 	if down, err := client.Keyboard.Down(ctx, kc.Makc); err != nil || down {
@@ -126,7 +129,7 @@ func TestMakcInputSendInputIntegration(t *testing.T) {
 
 	// --- Mouse relative move ---
 	before, _ := client.Mouse.Position(ctx)
-	if err := MakcInputMouseMove(client, 50, 0, ctx); err != nil {
+	if err := input.MakcInputMouseMove(client, 50, 0, ctx); err != nil {
 		t.Fatalf("mouse move: %v", err)
 	}
 	time.Sleep(20 * time.Millisecond)
@@ -141,7 +144,7 @@ func TestMakcInputSendInputIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("screen size: %v", err)
 	}
-	if err := MakcInputMouseMoveTo(client, 5000, 5000, ctx); err != nil {
+	if err := input.MakcInputMouseMoveTo(client, 5000, 5000, ctx); err != nil {
 		t.Fatalf("mouse moveTo: %v", err)
 	}
 	time.Sleep(20 * time.Millisecond)
@@ -153,13 +156,13 @@ func TestMakcInputSendInputIntegration(t *testing.T) {
 	t.Logf("mouse absolute move OK (pos=%+v)", pos)
 
 	// --- Mouse button down/up ---
-	if err := MakcInputMouseButtonDown(client, MouseButtonLeft, ctx); err != nil {
+	if err := input.MakcInputMouseButtonDown(client, MouseButtonLeft, ctx); err != nil {
 		t.Fatalf("mouse button down: %v", err)
 	}
 	if down, err := client.Mouse.Down(ctx, makc.ButtonLeft); err != nil || !down {
 		t.Fatalf("mouse button not down after press: down=%v err=%v", down, err)
 	}
-	if err := MakcInputMouseButtonUp(client, MouseButtonLeft, ctx); err != nil {
+	if err := input.MakcInputMouseButtonUp(client, MouseButtonLeft, ctx); err != nil {
 		t.Fatalf("mouse button up: %v", err)
 	}
 	if down, err := client.Mouse.Down(ctx, makc.ButtonLeft); err != nil || down {
@@ -168,10 +171,10 @@ func TestMakcInputSendInputIntegration(t *testing.T) {
 	t.Log("mouse button down/up OK")
 
 	// --- Wheel ---
-	if err := MakcInputMouseWheel(client, 1, ctx); err != nil {
+	if err := input.MakcInputMouseWheel(client, 1, ctx); err != nil {
 		t.Fatalf("mouse wheel: %v", err)
 	}
-	if err := MakcInputMouseHWheel(client, 1, ctx); err != nil {
+	if err := input.MakcInputMouseHWheel(client, 1, ctx); err != nil {
 		t.Fatalf("mouse hwheel: %v", err)
 	}
 	t.Log("mouse wheel OK")
@@ -194,9 +197,9 @@ func TestMakcReleaseMatchesHeldKeyIntegration(t *testing.T) {
 		t.Skipf("makc SendInput backend unavailable: %v", err)
 	}
 
-	prevQueue := GlobalConfig.DispatchQueueSize
-	GlobalConfig.DispatchQueueSize = 8
-	t.Cleanup(func() { GlobalConfig.DispatchQueueSize = prevQueue })
+	prevQueue := config.GlobalConfig.DispatchQueueSize
+	config.GlobalConfig.DispatchQueueSize = 8
+	t.Cleanup(func() { config.GlobalConfig.DispatchQueueSize = prevQueue })
 
 	// Build the engine around the explicit SendInput client instead of calling
 	// StartEngine, which would open its own auto-selected client.
@@ -208,13 +211,13 @@ func TestMakcReleaseMatchesHeldKeyIntegration(t *testing.T) {
 	go e.runMouse()
 	t.Cleanup(func() { _ = e.CloseEngine() })
 
-	pressed, ok := KeyCodesFromName("shift")
+	pressed, ok := input.KeyCodesFromName("shift")
 	if !ok {
-		t.Fatal("KeyCodesFromName(shift) failed")
+		t.Fatal("input.KeyCodesFromName(shift) failed")
 	}
-	released, ok := KeyCodesFromName("lshift")
+	released, ok := input.KeyCodesFromName("lshift")
 	if !ok {
-		t.Fatal("KeyCodesFromName(lshift) failed")
+		t.Fatal("input.KeyCodesFromName(lshift) failed")
 	}
 	t.Logf("keyboard backend=%s", client.Keyboard.InjectionBackend())
 	t.Logf("pressed=%+v", pressed)

@@ -278,9 +278,196 @@ service rpcKeyService {
 # 单元测试（键码映射、FakerInput 报告组装等，无需真实设备）
 go test ./...
 
-# 集成测试（需安装 FakerInput 虚拟设备，否则跳过）
+# 集成测试（FakerInput / makc，需对应设备或驱动，否则跳过）
 go test -tags integration ./...
+
+# 按包运行
+go test ./internal/input
+go test ./internal/engine
 ```
+
+## 性能基准
+
+基准分为四层：映射层、引擎层、服务层和端到端；另有默认不编译的真实后端基准。除最后一层外均**不会注入真实输入**。完整的方法、原始数据与分析见 [benchmark.md](benchmark.md)。
+
+| 层级 | 文件 | 覆盖内容 |
+|------|------|----------|
+| 映射层 | `internal/input/keymap_bench_test.go` | `KeyCodesFromName/Rune/Runes`、makc/winput 查表、`SamePhysicalKey` |
+| 引擎层 | `internal/engine/engines_bench_test.go` | submit 往返、队列容量、chord、held 状态、取消、drain、关闭、键鼠并发、延迟分布 |
+| 服务层 | `internal/service/grpc_bench_test.go` | bufconn 上的 unary / client-stream / mouse-stream，以及进程内 `dispatch` |
+| 端到端 | `bench/e2e.ps1` | 真实 TCP 回环 + `cmd/loadtest`（noop 后端），输出 CSV 与吞吐/百分位 |
+| 真实后端 | `internal/engine/realbackend_bench_test.go` | makc / fakerInput / winput 的真实注入延迟（会产生真实按键，默认不编译） |
+
+### 运行方式
+
+```powershell
+# 全量快速跑（约 40s；-p 1 串行执行各包，避免多个基准二进制互相干扰）
+go test -p 1 -run XXX -bench . -benchmem -benchtime 200ms -count 1 ./...
+
+# 稳定数据（约 5-6 分钟，README 中的参考值即由此得到）
+go test -p 1 -run XXX -bench . -benchmem -benchtime 500ms -count 3 ./... | Tee-Object bench.txt
+
+# 只跑某一层
+go test -run XXX -bench "BenchmarkEngine" -benchmem ./internal/engine
+go test -run XXX -bench "BenchmarkGRPC" -benchmem ./internal/service
+go test -run XXX -bench "BenchmarkKeyCodes|BenchmarkSamePhysicalKey" -benchmem ./internal/input
+
+# 观察并发争用（键盘只有单个 worker，增加 CPU 不会线性加速）
+go test -run XXX -bench "BenchmarkEngineSubmit" -cpu 1,4,16 -count 5 ./internal/engine
+
+# 与改动前对比（可选，不引入仓库依赖）
+go run golang.org/x/perf/cmd/benchstat@latest old.txt new.txt
+```
+
+> 基准会修改 `config.GlobalConfig` 并替换默认 `slog` logger，每个包内按顺序执行（没有 `b.Parallel`）。跨包运行时请加 `-p 1`，否则 Go 会并行启动多个包的测试二进制，互相干扰。
+
+### 参考结果
+
+采集环境：Windows / amd64、i7-13620H（10 核 16 线程）、16GB、Go 1.27.1、`GOMAXPROCS=16`、`-benchtime 500ms -count 3`（取中位数）。绝对值随机器和电源策略变化，**只用于同机前后对比**。
+
+引擎层（noop 后端，`ns/op` 为一次迭代；press+release 迭代包含 2 次 submit）：
+
+| 基准 | ns/op | B/op | allocs/op | 说明 |
+|------|-------|------|-----------|------|
+| `EngineSubmitSingle/press_held` | 1140 | 136 | 3 | 单次 submit ≈ 1.14µs，约 88 万次/s |
+| `EngineSubmitNoop` | 2256 | 272 | 6 | press+release，约 44 万对/s |
+| `EngineSubmitQueueSize/q1` | 2298 | 256 | 4 | 队列 1 |
+| `EngineSubmitQueueSize/q8` | 2285 | 256 | 4 | 队列 8 |
+| `EngineSubmitQueueSize/q1024` | 2285 | 256 | 4 | 默认队列 1024 |
+| `EngineSubmitQueueSize/q65536` | 2265 | 256 | 4 | 队列 65536 |
+| `EngineKeyChord/keys1` | 2260 | 256 | 4 | 单键 |
+| `EngineKeyChord/keys4` | 2903 | 256 | 4 | 四键 chord |
+| `EngineEffectiveKeyRelease/held128/exact_hit` | 20 | 0 | 0 | held-set 精确命中 |
+| `EngineEffectiveKeyRelease/held128/miss_scan` | 97 | 0 | 0 | held-set 全量扫描 |
+| `EngineCanceledContext` | 32 | 8 | 1 | 预取消 context 快速失败 |
+| `EngineMouseEvents/move_rel` | 1171 | 128 | 2 | 单次鼠标事件 |
+| `EngineKeyboardParallel` | 3130 / 66.5 万 ops/s | 272 | 6 | 16 生产者竞争单 worker |
+| `EngineMouseParallel` | 1417 / 70.7 万 ops/s | 128 | 2 | 鼠标独立 worker |
+| `EngineMixedWorkload/serial` | 3827 / 78.4 万 ops/s | 400 | 8 | 键鼠串行执行 |
+| `EngineMixedWorkload/concurrent` | 3507 / 85.5 万 ops/s | 400 | 8 | 键鼠并发执行（+9%） |
+| `EngineDrainQueue` | 74203 / 1380 万 ops/s | — | — | 一次排空 1024 条队列 |
+| `EngineCloseWithHeldKeys/held1` | 1813 | — | — | 关闭并释放 1 个 held 键 |
+| `EngineCloseWithHeldKeys/held32` | 2604 | — | — | 关闭并释放 32 个 held 键 |
+
+> `EngineSubmitSingle` 按真实调用方式每次传入新的 key slice；`benchPressRelease` 复用了同一个 slice，因此 `QueueSize`/`KeyChord` 的分配比单次 submit 少一次（8B）。真实 gRPC 路径每次 `dispatch` 也会新建 slice，与 `GRPCDispatch` 的 3 allocs/op 一致。
+
+后端延迟扫描（`noopLatencyMicros`，每次迭代 = press+release）：
+
+| 设置 | ns/op | ops/s | 备注 |
+|------|-------|-------|------|
+| 0 | 2379 | 85.5 万 | 纯引擎开销 |
+| 100µs | 1254512 | 1609 | 受 Windows 定时器粒度影响，实际约 0.6ms/次 |
+| 1ms | 3181220 | 636 | 接近 1/(1ms) 上限 |
+| 2ms | 4903460 | 412 | 线性 |
+| 5ms | 10896918 | 185 | 线性 |
+
+延迟分布（`EngineLatencyDistribution`，QPC 逐次采样 press+release 往返）：
+
+| p50 | p90 | p99 | max |
+|-----|-----|-----|-----|
+| 1.4µs | 4.5µs | 8.0µs | 377µs |
+
+服务层（bufconn，客户端与服务端同进程，包含 protobuf 与 gRPC 框架）：
+
+| 基准 | ns/op | B/op | allocs/op | 换算 |
+|------|-------|------|-----------|------|
+| `GRPCDispatch/name` | 1175 | 136 | 3 | 约 85 万次/s |
+| `GRPCDispatch/chord4` | 1381 | 152 | 3 | 约 290 万键/s |
+| `GRPCUnaryKeyServiceDebug` | 35671 | 9182 | 158 | 约 2.8 万次/s |
+| `GRPCUnaryParallel` | 8243 | 9005 | 144 | 约 12.1 万次/s |
+| `GRPCStreamKeyService/msgs1` | 39865 | 9658 | 165 | 约 2.5 万次/s |
+| `GRPCStreamKeyService/msgs10` | 72186 | 16569 | 325 | 约 14.2 万条消息/s |
+| `GRPCStreamKeyService/msgs100` | 299321 | 84108 | 1878 | 约 34.3 万条消息/s |
+| `GRPCMouseService`（32 事件/流） | 129085 | 31127 | 608 | 约 24.8 万事件/s |
+
+映射层（单次调用）：
+
+| 基准 | ns/op | B/op | allocs/op |
+|------|-------|------|-----------|
+| `KeyCodesFromName/lower` | 13.2 | 0 | 0 |
+| `KeyCodesFromName/mixed_case` | 36.2 | 8 | 1 |
+| `KeyCodesFromRune/lower_ascii` | 8.7 | 0 | 0 |
+| `KeyCodesFromRunes/chord3` | 36.9 | 0 | 0 |
+| `KeyCodesFromRunes/chord8` | 128.8 | 48 | 1 |
+| `KeyCodesFromMakc/hit` | 17.4 | 0 | 0 |
+| `KeyCodesFromWinput/hit` | 17.1 | 0 | 0 |
+| `SamePhysicalKey/same_code` | 0.56 | 0 | 0 |
+
+### 结论
+
+1. **键盘吞吐由单 worker 决定。** 单次 submit 约 1.14µs，press+release 约 2.26µs；并发提交不会提高吞吐，16 个生产者时反而降到约 66.5 万 ops/s（单生产者约 88 万 ops/s），因为所有事件仍要在同一个 worker 上串行注入。
+2. **`dispatchQueueSize` 不影响稳态吞吐。** 队列从 1 到 65536，ns/op 基本不变（2265–2298）；它只决定突发能缓存多少事件，以及饱和时请求的排队延迟。默认 1024 足以吸收短突发。
+3. **每次 submit 有 3 次分配（136B）。** 主要来自调用点的 `[]KeyCodes` 和每次新建的响应 channel；这是后续优化（对象池/复用响应通道）的首要目标。
+4. **held 键的释放是 O(1) 或 O(n)。** 精确命中约 20ns；修饰键不一致时回退到线性扫描，128 个 held 键约 97ns。正常“按下什么就释放什么”的客户端不会走扫描分支。
+5. **键鼠 worker 独立，但并发收益有限。** 并发执行相对串行只快约 9%（78.4 万 → 85.5 万 ops/s），瓶颈更多来自 submit 的 goroutine 唤醒与 Go 调度，而不是后端串行化；不要期待 2× 加速。
+6. **gRPC 是主要固定成本。** bufconn 下 unary 约 35.7µs/次，单条流的建流成本也在 40µs 量级；批量发送时每消息成本显著下降（100 条/流时约 3µs/条）。对高频按键，优先使用长流而不是大量 unary 调用。
+7. **大小写规范化会产生分配。** `KeyCodesFromName("Escape")` 的 `strings.ToLower` 每个调用分配 8B；高频路径尽量传小写键名，或读取端做小写缓存。
+8. **关闭路径可控。** 排空 1024 条队列约 74µs，关闭并释放 32 个 held 键约 2.6µs，不会成为退出瓶颈。
+
+### 端到端压测脚本
+
+`bench/e2e.ps1` 会编译 `GoKeyMux.exe` 与 `loadtest.exe` 到临时目录，生成 noop 配置并启动服务，然后按矩阵跑 loopback TCP 压测：
+
+```powershell
+pwsh ./bench/e2e.ps1 -Port 50071 -Duration 20s `
+  -Concurrency 1,4,16,64 -NoopLatencyMicros 0,50
+```
+
+- 产物：`%TEMP%\gokeymux-bench\run-<时间戳>\results.csv`、服务端日志与两个 exe。
+- `-Duration` 是每个 worker 的持续时间；脚本额外加 2s warmup。
+- 每个 `noopLatencyMicros` 值都会重启一次服务端。
+- noop 后端不做真实注入，运行期间可以正常使用机器。
+
+参考输出（2s/worker，`-Concurrency 1,8`）：
+
+| latency_us | mode | c | total | tps/rps | p50 | p99 |
+|-----------:|------|---|------:|--------:|-----|-----|
+| 0 | stream | 1 | 873316 | 433239 | — | — |
+| 0 | stream | 8 | 999894 | 451066 | — | — |
+| 0 | unary | 1 | 3257 | 1618 | 527.4µs | 13.2397ms |
+| 0 | unary | 8 | 38317 | 19136 | 0s | 6.7452ms |
+
+> `unary` 模式的百分位来自 `cmd/loadtest` 的 `time.Now`。在部分 Windows 环境（如 RDP/虚拟机）`time.Now` 粒度约 0.5ms，会出现 `p50=0s`；此时请以 `stream` 的吞吐或基准中的 QPC 延迟分布为准。
+
+### 真实后端基准（手动）
+
+默认构建不包含，且必须显式设置环境变量才会注入真实按键：
+
+```powershell
+$env:GOKEYMUX_REAL_BENCH = "1"
+
+# 直接运行：makc / fakerInput；winput 会因测试二进制在临时目录而 Skip
+go test -tags realbackend -run XXX -bench BenchmarkRealBackend -benchtime 100x -count 3 ./internal/engine
+
+# 包含 winputWithInterception：把测试二进制生成到仓库根目录（同目录已有 Interception\）
+go test -c -o .\GoKeyMux.realbench.test.exe -tags realbackend ./internal/engine
+.\GoKeyMux.realbench.test.exe --% -test.run XXX -test.bench BenchmarkRealBackendPressRelease -test.benchtime 100x -test.count 3
+```
+
+- **会把 F12 真正发送到当前前台窗口**。运行前请聚焦一个空白记事本等无害窗口，不要聚焦终端、IDE 或浏览器。
+- 驱动/设备不可用时该子基准自动 `Skip`。
+- `winputWithInterception` 从**测试二进制所在目录**查找 `Interception/library/...`；直接用 `go test` 时测试二进制在 Go 构建缓存中，因此会跳过。用上面的 `go test -c` 在仓库根目录生成测试 exe 即可，跑完记得删除。
+- 真实延迟取决于驱动和 USB/HID 处理，预期比 noop 慢 1–3 个数量级，适合用来确认“引擎开销相对于驱动开销可以忽略”。
+- **`makc` 子基准强制使用 SendInput。** 在 Windows 11 build 26200 上，auto 选中的 `user32!InjectKeyboardInput` 在连续注入几十次后会报
+  `The data area passed to a system call is too small`，无法完成持续压测；生产代码的 auto 行为未改动，仅基准内改用 SendInput。
+- 下表中的 `winputWithInterception` 数据使用 `go test -c` 在仓库根目录生成的测试二进制测得（同目录有 `Interception\`）；直接 `go test` 会因找不到 DLL 而跳过该后端。
+
+本机实测（Windows 11 26200 / i7-13620H，F12，`-benchtime 100x -count 5`，中位数）：
+
+| 后端 | ns/op（press+release） | 单事件 | submit/s | 相对 noop |
+|------|-----------------------:|-------:|---------:|----------:|
+| `noop`（参考） | 2,256 | 1.13µs | 886,000 | 1× |
+| `makc`（SendInput） | 1,930,673 | 965µs | 1,036 | 约 856× |
+| `fakerInput` | 118,395 | 59.2µs | 16,894 | 约 52× |
+| `winputWithInterception` | 6,460 | 3.23µs | 309,600 | 约 2.9× |
+
+### 注意事项
+
+- 基准固定使用 noop 后端；`makc`/`fakerInput` 的引擎层成本需通过真实后端基准或端到端压测确认。
+- 本机 `time.Now` 粒度较粗，因此延迟分布基准改用 Windows QPC（`QueryPerformanceCounter`），单次采样仍包含两次 QPC 读取的几十纳秒开销。
+- Windows 定时器粒度会让小于 1ms 的 `noopLatencyMicros` 被量化到约 0.5–1ms，延迟扫描请以 ≥1ms 的数据为准。
+- `EngineDrainQueue` 和 `EngineCloseWithHeldKeys` 的准备工作在计时器停止时完成，但 `-benchmem` 仍会统计这些准备工作分配的内存，忽略这两个用例的 `B/op` 即可。
+- 数据仅供参考；比较改动时请使用同一台机器、同一电源计划，并用 `benchstat` 对比 `-count` 多次的结果。
 
 ## 持续集成与发布
 
@@ -334,16 +521,27 @@ GoKeyMux-windows-386.zip
 
 ```
 .
-├── main.go                        # 入口：加载配置、启动引擎与 gRPC 服务、信号处理
-├── config.go / config.json        # 配置结构与加载逻辑（缺失时生成默认配置）
-├── engines.go                     # 引擎：按 driveName 分发到具体后端
-├── keyMap.go                      # 统一按键映射表（makc / winput / FakerInput 三种编码）
-├── grpcService.go                 # gRPC 服务实现、健康检查、keepalive、日志拦截器
-├── makcInput.go                   # makc 后端
-├── winputWithWindow.go            # winput 窗口消息后端
-├── winputWithInterception.go      # winput + Interception 驱动后端
-├── FakerInput.go                  # FakerInput 虚拟 HID 设备实现
-├── noopInput.go                   # noop 空操作后端（压测用）
+├── main.go                        # 入口：加载配置、启动 engine/service、信号处理
+├── config.json                    # 运行时配置（缺失时自动生成）
+├── internal/
+│   ├── config/config.go           # 配置结构与加载逻辑
+│   ├── input/
+│   │   ├── keyMap.go              # 统一按键映射表（makc / winput / FakerInput）
+│   │   ├── FakerInput.go          # FakerInput 虚拟 HID 设备实现
+│   │   ├── makcInput.go           # makc 后端
+│   │   ├── noopInput.go           # noop 空操作后端（压测用）
+│   │   ├── winputWithWindow.go    # winput 窗口消息后端
+│   │   ├── winputWithInterception.go
+│   │   └── *_test.go              # 键码/后端单测、集成测试、映射基准
+│   ├── engine/
+│   │   ├── engine.go              # 引擎：按 driveName 分发到具体后端
+│   │   ├── aliases.go             # 类型 / 驱动常量别名
+│   │   └── *_test.go              # 引擎单测、基准、集成与真实后端
+│   └── service/
+│       ├── grpc.go                # gRPC 服务、健康检查、keepalive、拦截器
+│       └── *_test.go              # gRPC 基准（bufconn）
+├── benchmark.md                   # 完整性能基准报告（方法、数据、结论）
+├── bench/e2e.ps1                  # 端到端 gRPC 压测脚本（noop 后端）
 ├── proto/
 │   ├── gokeymux.proto             # 服务协议定义
 │   └── gokeymux{,_grpc}.pb.go     # 生成的 protobuf / gRPC 桩代码

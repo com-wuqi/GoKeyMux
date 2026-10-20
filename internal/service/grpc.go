@@ -1,6 +1,9 @@
-package main
+package service
 
 import (
+	"GoKeyMux/internal/config"
+	"GoKeyMux/internal/engine"
+	"GoKeyMux/internal/input"
 	pb "GoKeyMux/proto"
 	"context"
 	"errors"
@@ -21,11 +24,11 @@ import (
 
 type GoKeyMuxService struct {
 	pb.UnimplementedRpcKeyServiceServer
-	engine *Engine
+	engine *engine.Engine
 }
 
-func NewGoKeyMuxService(engine *Engine) *GoKeyMuxService {
-	return &GoKeyMuxService{engine: engine}
+func NewGoKeyMuxService(eng *engine.Engine) *GoKeyMuxService {
+	return &GoKeyMuxService{engine: eng}
 }
 
 func (s *GoKeyMuxService) KeyService(stream pb.RpcKeyService_KeyServiceServer) error {
@@ -42,7 +45,7 @@ func (s *GoKeyMuxService) KeyService(stream pb.RpcKeyService_KeyServiceServer) e
 			return err
 		}
 		if err := s.dispatch(stream.Context(), req.GetKey(), req.GetIsRune(), req.GetIsPressed()); err != nil {
-			if errors.Is(err, ErrEngineClosed) {
+			if errors.Is(err, engine.ErrEngineClosed) {
 				return status.Error(codes.Unavailable, "engine is shutting down")
 			}
 			errCount++
@@ -75,7 +78,7 @@ func (s *GoKeyMuxService) KeyServiceDebug(ctx context.Context, req *pb.KeyInputD
 		)
 	}
 	if err := s.dispatch(ctx, req.GetKey(), req.GetIsRune(), req.GetIsPressed()); err != nil {
-		if errors.Is(err, ErrEngineClosed) {
+		if errors.Is(err, engine.ErrEngineClosed) {
 			return nil, status.Error(codes.Unavailable, "engine is shutting down")
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -97,19 +100,19 @@ func (s *GoKeyMuxService) dispatch(ctx context.Context, key string, isRune bool,
 	if s.engine == nil {
 		return errors.New("engine is not initialized")
 	}
-	var keys []KeyCodes
+	var keys []input.KeyCodes
 	if isRune {
 		var ok bool
-		keys, ok = KeyCodesFromRunes(key)
+		keys, ok = input.KeyCodesFromRunes(key)
 		if !ok {
 			return fmt.Errorf("unknown rune sequence %q", key)
 		}
 	} else {
-		kc, ok := KeyCodesFromName(key)
+		kc, ok := input.KeyCodesFromName(key)
 		if !ok {
 			return fmt.Errorf("unknown key %q", key)
 		}
-		keys = []KeyCodes{kc}
+		keys = []input.KeyCodes{kc}
 	}
 	if isPressed {
 		return s.engine.EnginePress(ctx, keys...)
@@ -162,7 +165,7 @@ func (s *GoKeyMuxService) MouseService(stream pb.RpcKeyService_MouseServiceServe
 			}
 		case pb.MouseEvent_LEFT_UP:
 			{
-				if err = s.engine.EngineMouseButtonUp(stream.Context(), MouseButtonLeft); err != nil {
+				if err = s.engine.EngineMouseButtonUp(stream.Context(), input.MouseButtonLeft); err != nil {
 					slog.Default().LogAttrs(
 						stream.Context(), slog.LevelError, "MouseEvent_LEFT_UP failed",
 						slog.String("err", err.Error()),
@@ -171,7 +174,7 @@ func (s *GoKeyMuxService) MouseService(stream pb.RpcKeyService_MouseServiceServe
 			}
 		case pb.MouseEvent_LEFT_DOWN:
 			{
-				if err = s.engine.EngineMouseButtonDown(stream.Context(), MouseButtonLeft); err != nil {
+				if err = s.engine.EngineMouseButtonDown(stream.Context(), input.MouseButtonLeft); err != nil {
 					slog.Default().LogAttrs(
 						stream.Context(), slog.LevelError, "MouseEvent_LEFT_DOWN failed",
 						slog.String("err", err.Error()),
@@ -180,7 +183,7 @@ func (s *GoKeyMuxService) MouseService(stream pb.RpcKeyService_MouseServiceServe
 			}
 		case pb.MouseEvent_RIGHT_UP:
 			{
-				if err = s.engine.EngineMouseButtonUp(stream.Context(), MouseButtonRight); err != nil {
+				if err = s.engine.EngineMouseButtonUp(stream.Context(), input.MouseButtonRight); err != nil {
 					slog.Default().LogAttrs(
 						stream.Context(), slog.LevelError, "MouseEvent_RIGHT_UP failed",
 						slog.String("err", err.Error()),
@@ -189,7 +192,7 @@ func (s *GoKeyMuxService) MouseService(stream pb.RpcKeyService_MouseServiceServe
 			}
 		case pb.MouseEvent_RIGHT_DOWN:
 			{
-				if err = s.engine.EngineMouseButtonDown(stream.Context(), MouseButtonRight); err != nil {
+				if err = s.engine.EngineMouseButtonDown(stream.Context(), input.MouseButtonRight); err != nil {
 					slog.Default().LogAttrs(
 						stream.Context(), slog.LevelError, "MouseEvent_RIGHT_DOWN failed",
 						slog.String("err", err.Error()),
@@ -198,7 +201,7 @@ func (s *GoKeyMuxService) MouseService(stream pb.RpcKeyService_MouseServiceServe
 			}
 		case pb.MouseEvent_MIDDLE_UP:
 			{
-				if err = s.engine.EngineMouseButtonUp(stream.Context(), MouseButtonMiddle); err != nil {
+				if err = s.engine.EngineMouseButtonUp(stream.Context(), input.MouseButtonMiddle); err != nil {
 					slog.Default().LogAttrs(
 						stream.Context(), slog.LevelError, "MouseEvent_MIDDLE_UP failed",
 						slog.String("err", err.Error()),
@@ -207,7 +210,7 @@ func (s *GoKeyMuxService) MouseService(stream pb.RpcKeyService_MouseServiceServe
 			}
 		case pb.MouseEvent_MIDDLE_DOWN:
 			{
-				if err = s.engine.EngineMouseButtonDown(stream.Context(), MouseButtonMiddle); err != nil {
+				if err = s.engine.EngineMouseButtonDown(stream.Context(), input.MouseButtonMiddle); err != nil {
 					slog.Default().LogAttrs(
 						stream.Context(), slog.LevelError, "MouseEvent_MIDDLE_DOWN failed",
 						slog.String("err", err.Error()),
@@ -219,7 +222,7 @@ func (s *GoKeyMuxService) MouseService(stream pb.RpcKeyService_MouseServiceServe
 				slog.String("type", req.GetType().String()),
 			)
 		}
-		if errors.Is(err, ErrEngineClosed) {
+		if errors.Is(err, engine.ErrEngineClosed) {
 			return status.Error(codes.Unavailable, "engine is shutting down")
 		}
 	}
@@ -296,8 +299,8 @@ func isLoopbackAddr(addr string) bool {
 // to a non-loopback interface would let any host on the network drive key
 // presses on this machine. A warning is logged below when the configured
 // address is not loopback.
-func StartService(engine *Engine) (*grpc.Server, <-chan error, error) {
-	addr := GlobalConfig.GRPCAddress
+func StartService(eng *engine.Engine) (*grpc.Server, <-chan error, error) {
+	addr := config.GlobalConfig.GRPCAddress
 	if !isLoopbackAddr(addr) {
 		slog.Default().LogAttrs(context.Background(), slog.LevelWarn,
 			"gRPC service binding to a non-loopback address",
@@ -313,19 +316,19 @@ func StartService(engine *Engine) (*grpc.Server, <-chan error, error) {
 	hs.SetServingStatus("GoKeyMux.rpcKeyService", healthpb.HealthCheckResponse_SERVING)
 	server := grpc.NewServer(
 		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Time:              time.Duration(GlobalConfig.GRPCKeepaliveTime) * time.Second,
-			Timeout:           time.Duration(GlobalConfig.GRPCKeepaliveTimeOut) * time.Second,
-			MaxConnectionIdle: time.Duration(GlobalConfig.GRPCKeepaliveMaxConnectionIdle) * time.Second,
+			Time:              time.Duration(config.GlobalConfig.GRPCKeepaliveTime) * time.Second,
+			Timeout:           time.Duration(config.GlobalConfig.GRPCKeepaliveTimeOut) * time.Second,
+			MaxConnectionIdle: time.Duration(config.GlobalConfig.GRPCKeepaliveMaxConnectionIdle) * time.Second,
 		}),
 		// 服务端 enforcement：限制客户端 ping 频率与无流 ping。
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             time.Duration(GlobalConfig.GRPCEnforcementPolicyMinTime) * time.Second,
-			PermitWithoutStream: GlobalConfig.GRPCEnforcementPermitWithoutStream,
+			MinTime:             time.Duration(config.GlobalConfig.GRPCEnforcementPolicyMinTime) * time.Second,
+			PermitWithoutStream: config.GlobalConfig.GRPCEnforcementPermitWithoutStream,
 		}),
 		grpc.UnaryInterceptor(UnaryServerLogging),
 		grpc.StreamInterceptor(StreamServerLogging),
 	)
-	pb.RegisterRpcKeyServiceServer(server, NewGoKeyMuxService(engine))
+	pb.RegisterRpcKeyServiceServer(server, NewGoKeyMuxService(eng))
 	healthpb.RegisterHealthServer(server, hs)
 	serveErr := make(chan error, 1)
 	go func() {

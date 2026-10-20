@@ -1,4 +1,4 @@
-package main
+package engine
 
 import (
 	"context"
@@ -9,6 +9,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"GoKeyMux/internal/config"
+	"GoKeyMux/internal/input"
 
 	"github.com/aiwaki/makc"
 	"github.com/rpdg/winput"
@@ -33,49 +36,6 @@ type keyOp struct {
 	resp chan error
 }
 
-// MouseButton identifies a logical mouse button, independent of any backend
-// encoding. Each backend maps it to its own representation in applyMouse.
-type MouseButton uint8
-
-const (
-	MouseButtonLeft MouseButton = iota + 1
-	MouseButtonRight
-	MouseButtonMiddle
-	MouseButtonX1
-	MouseButtonX2
-)
-
-// mouseEventKind selects which payload a mouseEvent carries.
-type mouseEventKind uint8
-
-const (
-	mouseEventMoveRel mouseEventKind = iota + 1
-	mouseEventMoveAbs
-	mouseEventButton
-	mouseEventWheel
-	mouseEventHWheel
-)
-
-// mouseEvent is one mouse injection operation in a backend-neutral form.
-type mouseEvent struct {
-	kind mouseEventKind
-
-	// dx/dy is the relative movement delta in pixels for mouseEventMoveRel.
-	dx, dy int32
-
-	// x/y is the absolute position for mouseEventMoveAbs, normalized to
-	// 0..10000 (matching the gRPC MouseEvent ABS_MOVE convention). Each backend
-	// scales it to its own absolute range (e.g. FakerInput's 0..32767).
-	x, y int32
-
-	// button and isPressed describe mouseEventButton.
-	button    MouseButton
-	isPressed bool
-
-	// delta is the wheel detent count for mouseEventWheel / mouseEventHWheel.
-	delta int32
-}
-
 // mouseOp is a single mouse injection request submitted to the engine mouse
 // worker. It is the mouse counterpart of keyOp.
 type mouseOp struct {
@@ -87,7 +47,7 @@ type mouseOp struct {
 type Engine struct {
 	driveClient any
 	// driveName is captured at StartEngine time. Using it instead of reading
-	// GlobalConfig at dispatch/close time keeps the whole lifecycle bound to a
+	// config.GlobalConfig at dispatch/close time keeps the whole lifecycle bound to a
 	// single backend even if the global config is mutated later.
 	driveName DriveName
 
@@ -125,7 +85,7 @@ type Engine struct {
 }
 
 func NewEngine() *Engine {
-	size := GlobalConfig.DispatchQueueSize
+	size := config.GlobalConfig.DispatchQueueSize
 	if size <= 0 {
 		size = defaultDispatchQueueSize
 	}
@@ -140,11 +100,11 @@ func NewEngine() *Engine {
 }
 
 func (e *Engine) StartEngine() error {
-	e.driveName = GlobalConfig.EnabledDriveName
+	e.driveName = config.GlobalConfig.EnabledDriveName
 	switch e.driveName {
 	case DriveMakc:
 		{
-			client, err := MakcInputInit()
+			client, err := input.MakcInputInit()
 			if err != nil {
 				return err
 			}
@@ -152,7 +112,7 @@ func (e *Engine) StartEngine() error {
 		}
 	case DriveFakerInput:
 		{
-			client, err := FakerInputInit()
+			client, err := input.FakerInputInit()
 			if err != nil {
 				return err
 			}
@@ -160,7 +120,7 @@ func (e *Engine) StartEngine() error {
 		}
 	case DriveWinputWithWindow:
 		{
-			window, err := WinputInitWithWindow()
+			window, err := input.WinputInitWithWindow()
 			if err != nil {
 				return err
 			}
@@ -169,7 +129,7 @@ func (e *Engine) StartEngine() error {
 		}
 	case DriveWinputWithInterception:
 		{
-			if err := WinputWithInterceptionInit(); err != nil {
+			if err := input.WinputWithInterceptionInit(); err != nil {
 				return err
 			}
 			slog.Warn("使用winput可能会导致键鼠输入串行化")
@@ -177,11 +137,11 @@ func (e *Engine) StartEngine() error {
 		}
 	case DriveNoop:
 		{
-			e.driveClient = NewNoopDevice(time.Duration(GlobalConfig.NoopLatencyMicros) * time.Microsecond)
+			e.driveClient = input.NewNoopDevice(time.Duration(config.GlobalConfig.NoopLatencyMicros) * time.Microsecond)
 			slog.Debug("debug driver ready")
 		}
 	default:
-		return fmt.Errorf("unsupported drive %s", GlobalConfig.EnabledDriveName)
+		return fmt.Errorf("unsupported drive %s", config.GlobalConfig.EnabledDriveName)
 	}
 
 	// Start the workers after the backend is initialized so the goroutines see
@@ -223,10 +183,10 @@ func (e *Engine) CloseEngine() error {
 			}
 		case DriveFakerInput:
 			{
-				if client, ok := e.driveClient.(*FakerInputDevice); ok {
+				if client, ok := e.driveClient.(*input.FakerInputDevice); ok {
 					e.closeErr = client.Close()
 				} else if e.driveClient != nil {
-					e.closeErr = fmt.Errorf("drive is not '*FakerInputDevice'")
+					e.closeErr = fmt.Errorf("drive is not '*input.FakerInputDevice'")
 				}
 			}
 		case DriveWinputWithWindow, DriveWinputWithInterception:
@@ -235,10 +195,10 @@ func (e *Engine) CloseEngine() error {
 			}
 		case DriveNoop:
 			{
-				if client, ok := e.driveClient.(*NoopDevice); ok {
+				if client, ok := e.driveClient.(*input.NoopDevice); ok {
 					e.closeErr = client.Close()
 				} else if e.driveClient != nil {
-					e.closeErr = fmt.Errorf("drive is not '*NoopDevice'")
+					e.closeErr = fmt.Errorf("drive is not '*input.NoopDevice'")
 				}
 			}
 		default:
@@ -311,7 +271,7 @@ func (e *Engine) drainMouse() {
 		select {
 		case op := <-e.mouseOps:
 			ctx := op.ctx
-			if op.ev.kind == mouseEventButton && !op.ev.isPressed {
+			if op.ev.Kind == mouseEventButton && !op.ev.IsPressed {
 				ctx = context.Background()
 			}
 			op.resp <- e.applyMouse(ctx, op.ev)
@@ -331,33 +291,33 @@ func (e *Engine) EngineRelease(ctx context.Context, keys ...KeyCodes) error {
 
 // EngineMouseMove injects a relative mouse movement by dx/dy pixels.
 func (e *Engine) EngineMouseMove(ctx context.Context, dx, dy int32) error {
-	return e.submitMouse(ctx, mouseEvent{kind: mouseEventMoveRel, dx: dx, dy: dy})
+	return e.submitMouse(ctx, mouseEvent{Kind: mouseEventMoveRel, DX: dx, DY: dy})
 }
 
 // EngineMouseMoveTo injects an absolute mouse movement to a position
 // normalized to 0..10000 (matching the gRPC ABS_MOVE convention).
 func (e *Engine) EngineMouseMoveTo(ctx context.Context, x, y int32) error {
-	return e.submitMouse(ctx, mouseEvent{kind: mouseEventMoveAbs, x: x, y: y})
+	return e.submitMouse(ctx, mouseEvent{Kind: mouseEventMoveAbs, X: x, Y: y})
 }
 
 // EngineMouseButtonDown presses a mouse button and keeps it held.
 func (e *Engine) EngineMouseButtonDown(ctx context.Context, button MouseButton) error {
-	return e.submitMouse(ctx, mouseEvent{kind: mouseEventButton, button: button, isPressed: true})
+	return e.submitMouse(ctx, mouseEvent{Kind: mouseEventButton, Button: button, IsPressed: true})
 }
 
 // EngineMouseButtonUp releases a mouse button.
 func (e *Engine) EngineMouseButtonUp(ctx context.Context, button MouseButton) error {
-	return e.submitMouse(ctx, mouseEvent{kind: mouseEventButton, button: button, isPressed: false})
+	return e.submitMouse(ctx, mouseEvent{Kind: mouseEventButton, Button: button, IsPressed: false})
 }
 
 // EngineMouseWheel injects vertical wheel movement in detents.
 func (e *Engine) EngineMouseWheel(ctx context.Context, delta int32) error {
-	return e.submitMouse(ctx, mouseEvent{kind: mouseEventWheel, delta: delta})
+	return e.submitMouse(ctx, mouseEvent{Kind: mouseEventWheel, Delta: delta})
 }
 
 // EngineMouseHWheel injects horizontal wheel movement in detents.
 func (e *Engine) EngineMouseHWheel(ctx context.Context, delta int32) error {
-	return e.submitMouse(ctx, mouseEvent{kind: mouseEventHWheel, delta: delta})
+	return e.submitMouse(ctx, mouseEvent{Kind: mouseEventHWheel, Delta: delta})
 }
 
 // submitMouse enqueues a mouse request and waits for the mouse worker to
@@ -433,9 +393,9 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				key = e.effectiveKey(key, isPressed)
 				var err error
 				if isPressed {
-					err = MakcInputPress(client, key, ctx)
+					err = input.MakcInputPress(client, key, ctx)
 				} else {
-					err = MakcInputRelease(client, key, ctx)
+					err = input.MakcInputRelease(client, key, ctx)
 				}
 				if err != nil {
 					return err
@@ -446,9 +406,9 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 		}
 	case DriveFakerInput:
 		{
-			client, ok := e.driveClient.(*FakerInputDevice)
+			client, ok := e.driveClient.(*input.FakerInputDevice)
 			if !ok {
-				return fmt.Errorf("drive is not '*FakerInputDevice'")
+				return fmt.Errorf("drive is not '*input.FakerInputDevice'")
 			}
 			for _, key := range keys {
 				if err := ctx.Err(); err != nil {
@@ -481,9 +441,9 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				key = e.effectiveKey(key, isPressed)
 				var err error
 				if isPressed {
-					err = WinputWithWindowPress(target, key)
+					err = input.WinputWithWindowPress(target, key)
 				} else {
-					err = WinputWithWindowRelease(target, key)
+					err = input.WinputWithWindowRelease(target, key)
 				}
 				if err != nil {
 					return err
@@ -501,9 +461,9 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 				key = e.effectiveKey(key, isPressed)
 				var err error
 				if isPressed {
-					err = WinputWithInterceptionPress(key)
+					err = input.WinputWithInterceptionPress(key)
 				} else {
-					err = WinputWithInterceptionRelease(key)
+					err = input.WinputWithInterceptionRelease(key)
 				}
 				if err != nil {
 					return err
@@ -514,9 +474,9 @@ func (e *Engine) apply(ctx context.Context, keys []KeyCodes, isPressed bool) err
 		}
 	case DriveNoop:
 		{
-			client, ok := e.driveClient.(*NoopDevice)
+			client, ok := e.driveClient.(*input.NoopDevice)
 			if !ok {
-				return fmt.Errorf("drive is not '*NoopDevice'")
+				return fmt.Errorf("drive is not '*input.NoopDevice'")
 			}
 			for _, key := range keys {
 				if err := ctx.Err(); err != nil {
@@ -552,21 +512,21 @@ func (e *Engine) applyMouse(ctx context.Context, ev mouseEvent) error {
 	switch e.driveName {
 	case DriveFakerInput:
 		{
-			client, ok := e.driveClient.(*FakerInputDevice)
+			client, ok := e.driveClient.(*input.FakerInputDevice)
 			if !ok {
-				return fmt.Errorf("drive is not '*FakerInputDevice'")
+				return fmt.Errorf("drive is not '*input.FakerInputDevice'")
 			}
-			switch ev.kind {
+			switch ev.Kind {
 			case mouseEventMoveRel:
-				return client.MouseMove(FakerInputRelDelta(ev.dx), FakerInputRelDelta(ev.dy))
+				return client.MouseMove(input.FakerInputRelDelta(ev.DX), input.FakerInputRelDelta(ev.DY))
 			case mouseEventMoveAbs:
-				return client.MouseMoveTo(FakerInputAbsCoordinate(ev.x), FakerInputAbsCoordinate(ev.y))
+				return client.MouseMoveTo(input.FakerInputAbsCoordinate(ev.X), input.FakerInputAbsCoordinate(ev.Y))
 			case mouseEventButton:
-				button, err := FakerInputMouseButton(ev.button)
+				button, err := input.FakerInputMouseButton(ev.Button)
 				if err != nil {
 					return err
 				}
-				if ev.isPressed {
+				if ev.IsPressed {
 					if err := client.MouseButtonDown(button); err != nil {
 						return err
 					}
@@ -575,27 +535,27 @@ func (e *Engine) applyMouse(ctx context.Context, ev mouseEvent) error {
 						return err
 					}
 				}
-				e.recordMouseButton(ev.button, ev.isPressed)
+				e.recordMouseButton(ev.Button, ev.IsPressed)
 				return nil
 			case mouseEventWheel:
-				return client.MouseWheel(int8(ev.delta))
+				return client.MouseWheel(int8(ev.Delta))
 			case mouseEventHWheel:
-				return client.MouseHWheel(int8(ev.delta))
+				return client.MouseHWheel(int8(ev.Delta))
 			default:
-				return fmt.Errorf("unknown mouse event %d", ev.kind)
+				return fmt.Errorf("unknown mouse event %d", ev.Kind)
 			}
 		}
 	case DriveNoop:
 		{
-			client, ok := e.driveClient.(*NoopDevice)
+			client, ok := e.driveClient.(*input.NoopDevice)
 			if !ok {
-				return fmt.Errorf("drive is not '*NoopDevice'")
+				return fmt.Errorf("drive is not '*input.NoopDevice'")
 			}
 			if err := client.Mouse(ctx, ev); err != nil {
 				return err
 			}
-			if ev.kind == mouseEventButton {
-				e.recordMouseButton(ev.button, ev.isPressed)
+			if ev.Kind == mouseEventButton {
+				e.recordMouseButton(ev.Button, ev.IsPressed)
 			}
 			return nil
 		}
@@ -605,29 +565,29 @@ func (e *Engine) applyMouse(ctx context.Context, ev mouseEvent) error {
 			if !ok {
 				return fmt.Errorf("drive is not '*makc.Client'")
 			}
-			switch ev.kind {
+			switch ev.Kind {
 			case mouseEventMoveRel:
-				return MakcInputMouseMove(client, ev.dx, ev.dy, ctx)
+				return input.MakcInputMouseMove(client, ev.DX, ev.DY, ctx)
 			case mouseEventMoveAbs:
-				return MakcInputMouseMoveTo(client, ev.x, ev.y, ctx)
+				return input.MakcInputMouseMoveTo(client, ev.X, ev.Y, ctx)
 			case mouseEventButton:
-				if ev.isPressed {
-					if err := MakcInputMouseButtonDown(client, ev.button, ctx); err != nil {
+				if ev.IsPressed {
+					if err := input.MakcInputMouseButtonDown(client, ev.Button, ctx); err != nil {
 						return err
 					}
 				} else {
-					if err := MakcInputMouseButtonUp(client, ev.button, ctx); err != nil {
+					if err := input.MakcInputMouseButtonUp(client, ev.Button, ctx); err != nil {
 						return err
 					}
 				}
-				e.recordMouseButton(ev.button, ev.isPressed)
+				e.recordMouseButton(ev.Button, ev.IsPressed)
 				return nil
 			case mouseEventWheel:
-				return MakcInputMouseWheel(client, ev.delta, ctx)
+				return input.MakcInputMouseWheel(client, ev.Delta, ctx)
 			case mouseEventHWheel:
-				return MakcInputMouseHWheel(client, ev.delta, ctx)
+				return input.MakcInputMouseHWheel(client, ev.Delta, ctx)
 			default:
-				return fmt.Errorf("unknown mouse event %d", ev.kind)
+				return fmt.Errorf("unknown mouse event %d", ev.Kind)
 			}
 		}
 	case DriveWinputWithWindow, DriveWinputWithInterception:
@@ -652,22 +612,11 @@ func (e *Engine) effectiveKey(key KeyCodes, isPressed bool) KeyCodes {
 		return key
 	}
 	for _, held := range e.heldKeys {
-		if samePhysicalKey(held, key) {
+		if input.SamePhysicalKey(held, key) {
 			return held
 		}
 	}
 	return key
-}
-
-// samePhysicalKey reports whether two KeyCodes refer to the same physical key,
-// ignoring modifier flags. The FakerInput code is used as the backend-neutral
-// identity because every non-modifier key maps to it one-to-one; modifier-only
-// keys (code 0) are identified by their modifier flag instead.
-func samePhysicalKey(a, b KeyCodes) bool {
-	if a.FakerInput != 0 || b.FakerInput != 0 {
-		return a.FakerInput == b.FakerInput
-	}
-	return a.Modifiers == b.Modifiers
 }
 
 // recordKeyState updates the set of held keys after a backend injection
@@ -753,7 +702,7 @@ func (e *Engine) releaseHeldButtons() {
 	clear(e.heldButtonSet)
 	slog.Debug("releasing held mouse buttons on shutdown", "count", len(buttons))
 	for _, button := range slices.Backward(buttons) {
-		if err := e.applyMouse(context.Background(), mouseEvent{kind: mouseEventButton, button: button, isPressed: false}); err != nil {
+		if err := e.applyMouse(context.Background(), mouseEvent{Kind: mouseEventButton, Button: button, IsPressed: false}); err != nil {
 			slog.Warn("release held mouse button on shutdown failed", "button", button, "err", err)
 		}
 	}

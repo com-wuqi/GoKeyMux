@@ -1,6 +1,9 @@
 package main
 
 import (
+	"GoKeyMux/internal/config"
+	"GoKeyMux/internal/engine"
+	"GoKeyMux/internal/service"
 	"GoKeyMux/version"
 	"log/slog"
 	"net/http"
@@ -15,20 +18,20 @@ func main() {
 	v, commit, buildTime := version.Info()
 	slog.Info("GoKeyMux build info", "version", v, "commit", commit, "buildTime", buildTime)
 
-	err := LoadConfig()
+	err := config.LoadConfig()
 	if err != nil {
 		slog.Error("Error loading config", "err", err)
 		return
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: LogLevel2slogLevel(GlobalConfig.LogLevel),
+		Level: config.LogLevel2slogLevel(config.GlobalConfig.LogLevel),
 	}))
 	slog.SetDefault(logger)
 
-	if GlobalConfig.PprofAddress != "" {
+	if config.GlobalConfig.PprofAddress != "" {
 		go func() {
-			slog.Info("pprof listening", "addr", GlobalConfig.PprofAddress)
-			if err := http.ListenAndServe(GlobalConfig.PprofAddress, nil); err != nil {
+			slog.Info("pprof listening", "addr", config.GlobalConfig.PprofAddress)
+			if err := http.ListenAndServe(config.GlobalConfig.PprofAddress, nil); err != nil {
 				slog.Error("pprof server error", "err", err)
 			}
 		}()
@@ -37,8 +40,8 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	engine := NewEngine()
-	err = engine.StartEngine()
+	eng := engine.NewEngine()
+	err = eng.StartEngine()
 	if err != nil {
 		slog.Error("Error starting engine", "err", err)
 		return
@@ -57,7 +60,7 @@ func main() {
 			return
 		}
 		engineClosed = true
-		if err := engine.CloseEngine(); err != nil {
+		if err := eng.CloseEngine(); err != nil {
 			slog.Error("Error closing engine", "err", err)
 		}
 		slog.Info("engine closed")
@@ -65,7 +68,7 @@ func main() {
 	defer closeEngine()
 
 	slog.Info("server starting")
-	server, serverErrCh, err := StartService(engine)
+	server, serverErrCh, err := service.StartService(eng)
 	if err != nil {
 		slog.Error("Error starting service", "err", err)
 		return
@@ -77,7 +80,7 @@ func main() {
 		select {
 		case <-done:
 			slog.Info("server stopped")
-		case <-time.After(time.Duration(GlobalConfig.GRPCServerShutdownTimeout) * time.Second):
+		case <-time.After(time.Duration(config.GlobalConfig.GRPCServerShutdownTimeout) * time.Second):
 			slog.Warn("Shutdown service timed out, use Stop")
 			server.Stop()
 		}

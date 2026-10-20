@@ -1,16 +1,18 @@
-package main
+package input
 
 import (
 	"errors"
 	"fmt"
 	"log/slog"
 
+	"GoKeyMux/internal/config"
+
 	"github.com/rpdg/winput"
 )
 
 func WinputInitWithWindow() (*winput.Window, error) {
 	slog.Debug("WinputInitWithWindow")
-	windows, err := winput.FindByProcessName(GlobalConfig.WinputWindowProcessName)
+	windows, err := winput.FindByProcessName(config.GlobalConfig.WinputWindowProcessName)
 	if err != nil {
 		slog.Debug("Find By Process Name Error")
 		return nil, err
@@ -18,11 +20,11 @@ func WinputInitWithWindow() (*winput.Window, error) {
 	slog.Debug("debug: length of window", "len", len(windows))
 	var target *winput.Window
 	target = nil
-	if GlobalConfig.WinputWindowUseStaticIndex {
-		if GlobalConfig.WinputWindowIndex < 0 || GlobalConfig.WinputWindowIndex >= len(windows) {
+	if config.GlobalConfig.WinputWindowUseStaticIndex {
+		if config.GlobalConfig.WinputWindowIndex < 0 || config.GlobalConfig.WinputWindowIndex >= len(windows) {
 			return nil, errors.New("index out of range")
 		}
-		target = windows[GlobalConfig.WinputWindowIndex]
+		target = windows[config.GlobalConfig.WinputWindowIndex]
 	} else {
 		for _, window := range windows {
 			if window.IsValid() && window.IsVisible() {

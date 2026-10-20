@@ -1,4 +1,4 @@
-package main
+package input
 
 import (
 	"bytes"
@@ -609,5 +609,45 @@ func TestReleaseAllClearsStandaloneModifiers(t *testing.T) {
 	mods, _ := d.heldState()
 	if mods != 0 {
 		t.Fatalf("mods = %#x, want 0", mods)
+	}
+}
+
+func TestFakerInputAbsCoordinate(t *testing.T) {
+	cases := []struct {
+		in   int32
+		want uint16
+	}{
+		{0, 0},
+		{10000, 32767},
+		{5000, 16383},
+		{-1, 0},
+		{10001, 32767},
+	}
+	for _, c := range cases {
+		if got := FakerInputAbsCoordinate(c.in); got != c.want {
+			t.Errorf("FakerInputAbsCoordinate(%d) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
+func TestFakerInputRelDelta(t *testing.T) {
+	cases := []struct {
+		in   int32
+		want int16
+	}{
+		{0, 0},
+		{1, 1},
+		{-1, -1},
+		{32767, 32767},
+		{-32767, -32767},
+		{32768, 32767},
+		{-32768, -32767},
+		{40000, 32767},
+		{-40000, -32767},
+	}
+	for _, c := range cases {
+		if got := FakerInputRelDelta(c.in); got != c.want {
+			t.Errorf("FakerInputRelDelta(%d) = %d, want %d", c.in, got, c.want)
+		}
 	}
 }

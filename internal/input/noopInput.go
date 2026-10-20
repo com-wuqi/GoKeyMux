@@ -1,4 +1,4 @@
-package main
+package input
 
 import (
 	"context"
@@ -71,30 +71,30 @@ func (d *NoopDevice) Release(ctx context.Context, _ KeyCodes) error {
 
 // Mouse processes a single backend-neutral mouse event, incrementing the
 // corresponding counter. It performs no real injection.
-func (d *NoopDevice) Mouse(ctx context.Context, ev mouseEvent) error {
+func (d *NoopDevice) Mouse(ctx context.Context, ev MouseEvent) error {
 	if err := d.ensureOpen(); err != nil {
 		return err
 	}
 	if err := d.applyLatency(ctx); err != nil {
 		return err
 	}
-	switch ev.kind {
-	case mouseEventMoveRel:
+	switch ev.Kind {
+	case MouseEventMoveRel:
 		d.mouseMoveCount++
-	case mouseEventMoveAbs:
+	case MouseEventMoveAbs:
 		d.mouseMoveAbsCount++
-	case mouseEventButton:
-		if ev.isPressed {
+	case MouseEventButton:
+		if ev.IsPressed {
 			d.mouseButtonDownCnt++
 		} else {
 			d.mouseButtonUpCnt++
 		}
-	case mouseEventWheel:
+	case MouseEventWheel:
 		d.mouseWheelCount++
-	case mouseEventHWheel:
+	case MouseEventHWheel:
 		d.mouseHWheelCount++
 	default:
-		return fmt.Errorf("unknown mouse event %d", ev.kind)
+		return fmt.Errorf("unknown mouse event %d", ev.Kind)
 	}
 	return nil
 }
